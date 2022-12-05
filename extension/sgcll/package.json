@@ -1,0 +1,25 @@
+{
+    "name": "sgcll",
+    "displayName": "super's Generic C-Like Language",
+    "description": "Syntax highlighting for this goofy language.",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [{
+            "id": "sgcll",
+            "aliases": ["super's Generic C-Like Language"],
+            "extensions": [".sgcll"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "sgcll",
+            "scopeName": "source.sgcll",
+            "path": "./syntaxes/sgcll.tmLanguage.json"
+        }]
+    }
+}

@@ -1,0 +1,8 @@
+import "io";
+
+i32 main()
+{
+    print('H');
+    print('i');
+    return 0;
+}

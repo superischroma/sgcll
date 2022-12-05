@@ -1,0 +1,38 @@
+{
+    "type": "AST_FILE",
+    "datatype": null,
+    "loc": {}, // omitted
+    "decls": [
+        {
+            "type": "AST_FUNCTION_DECL",
+            "datatype": "DT_I32",
+            "loc": {}, // omitted
+            "func_name": "main",
+            "params": [],
+            "local_variables": [],
+            "body": {
+                "type": "AST_BODY",
+                "datatype": null,
+                "loc": {}, // omitted
+                "statements": [
+                    {
+                        "type": "AST_FUNCTION_CALL",
+                        "datatype": "DT_VOID",
+                        "loc": {}, // omitted
+                        "operand": {
+
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "imports": [
+        {
+            "type": "AST_IMPORT",
+            "datatype": null,
+            "loc": {}, // omitted
+            "path": "io"
+        }
+    ]
+}
