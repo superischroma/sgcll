@@ -8,18 +8,18 @@
     if (!(condition)) \
         return false
 
-datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DT_VOID, 0, false };
-datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DT_BOOL, 1, true };
-datatype_t* t_i8 = &(datatype_t){ VT_PUBLIC, DT_I8, 1, false };
-datatype_t* t_i16 = &(datatype_t){ VT_PUBLIC, DT_I16, 2, false };
-datatype_t* t_i32 = &(datatype_t){ VT_PUBLIC, DT_I32, 4, false };
-datatype_t* t_i64 = &(datatype_t){ VT_PUBLIC, DT_I64, 8, false };
-datatype_t* t_ui8 = &(datatype_t){ VT_PUBLIC, DT_I8, 1, true };
-datatype_t* t_ui16 = &(datatype_t){ VT_PUBLIC, DT_I16, 2, true };
-datatype_t* t_ui32 = &(datatype_t){ VT_PUBLIC, DT_I32, 4, true };
-datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DT_I64, 8, true };
-datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DT_F32, 4, false };
-datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DT_F64, 8, false };
+datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
+datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DTT_BOOL, 1, true };
+datatype_t* t_i8 = &(datatype_t){ VT_PUBLIC, DTT_I8, 1, false };
+datatype_t* t_i16 = &(datatype_t){ VT_PUBLIC, DTT_I16, 2, false };
+datatype_t* t_i32 = &(datatype_t){ VT_PUBLIC, DTT_I32, 4, false };
+datatype_t* t_i64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, false };
+datatype_t* t_ui8 = &(datatype_t){ VT_PUBLIC, DTT_I8, 1, true };
+datatype_t* t_ui16 = &(datatype_t){ VT_PUBLIC, DTT_I16, 2, true };
+datatype_t* t_ui32 = &(datatype_t){ VT_PUBLIC, DTT_I32, 4, true };
+datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, true };
+datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
+datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
 
 parser_t* parser_init(lexer_t* lex)
 {
@@ -113,39 +113,28 @@ bool parser_eof(parser_t* p)
     return p->oindex >= p->lex->output->size;
 }
 
-bool parser_is_type_spec(parser_t* p)
+int parser_get_datatype_type(parser_t* p)
 {
     token_t* token = parser_peek(p);
-    if (token_has_content(token))
-        return false;
+    if (token == NULL)
+        return -2;
+    if (token_has_content(token)) // objects...?
+        return -1;
+    bool found = false;
     switch (token->id)
     {
-        #define keyword(id, _, istype) \
+        #define keyword(id, _, settings) \
         case id: \
         { \
-            if (istype) \
-                return true; \
+            if (settings & 1) \
+                found = true; \
             break; \
         }
         #include "keywords.inc"
         #undef keyword
     }
-    return false;
-}
-
-static vector_t* parser_collect_type_specs(parser_t* p)
-{
-    vector_t* vec = vector_init(10, 5);
-    for (;;)
-    {
-        if (parser_eof(p))
-            break;
-        if (!parser_is_type_spec(p))
-            break;
-        token_t* token = parser_get(p);
-        vector_push(vec, (void*) token->id);
-    }
-    return vec;
+    if (found) return token->id - KW_VOID;
+    return -1;
 }
 
 bool parser_is_func_definition(parser_t* p)
@@ -177,6 +166,40 @@ bool parser_is_func_definition(parser_t* p)
     return true;
 }
 
+static datatype_t* parser_build_datatype(parser_t* p)
+{
+    datatype_t* dt = calloc(1, sizeof(datatype_t));
+    dt->visibility = VT_PRIVATE;
+    dt->usign = false;
+    dt->type = DTT_I32;
+    for (;; parser_get(p))
+    {
+        token_t* token = parser_peek(p);
+        if (token != NULL && token->type == TT_IDENTIFIER)
+            break;
+        datatype_type dtt = parser_get_datatype_type(p);
+        if (dtt == -2)
+            errorp(0, 0, "reached end of file while parsing datatype");
+        if (dtt != -1)
+        {
+            dt->type = dtt;
+            continue;
+        }
+        switch (parser_peek(p)->id)
+        {
+            case KW_PRIVATE:
+            case KW_PUBLIC:
+            case KW_PROTECTED:
+                dt->visibility = parser_peek(p)->id - VT_PRIVATE;
+                break;
+            case KW_UNSIGNED:
+                dt->usign = true;
+                break;
+        }
+    }
+    return dt;
+}
+
 static ast_node_t* parser_read_import(parser_t* p)
 {
     parser_get(p); // skip import keyword
@@ -188,8 +211,9 @@ static ast_node_t* parser_read_import(parser_t* p)
 
 static ast_node_t* parser_read_func_definition(parser_t* p)
 {
-    vector_t* specifiers = parser_collect_type_specs(p);
+    datatype_t* dt = parser_build_datatype(p);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
+    ast_node_t* func_node = map_put(p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
     parser_expect(p, '(');
     p->lenv = map_init(p->lenv ? p->lenv : p->genv, 100);
     for (;;)
@@ -199,11 +223,16 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
             parser_get(p);
             break;
         }
-        vector_t* parameter_specifiers = parser_collect_type_specs(p);
+        if (parser_check(p, ','))
+            parser_get(p);
+        datatype_t* pdt = parser_build_datatype(p);
         token_t* param_name_token = parser_expect_type(p, TT_IDENTIFIER);
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
+        ast_node_t* lvar = map_put(p->lenv, param_name_token->content, ast_lvar_init(pdt, param_name_token->loc, param_name_token->content));
+        vector_push(func_node->params, lvar);
     }
+    return func_node;
 }
 
 token_t* parser_read(parser_t* p)

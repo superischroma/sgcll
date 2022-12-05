@@ -28,6 +28,23 @@ ast_node_t* ast_import_init(location_t* loc, char* path)
     });
 }
 
+ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func_name)
+{
+    return ast_init(AST_FUNC_DEFINITION, dt, loc, &(ast_node_t){
+        .func_name = func_name,
+        .params = vector_init(10, 3),
+        .local_variables = vector_init(10, 5),
+        .body = NULL
+    });
+}
+
+ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name)
+{
+    return ast_init(AST_LVAR, dt, loc, &(ast_node_t){
+        .var_name = lvar_name
+    });
+}
+
 static void std_ast_print(ast_node_t* node, int indent)
 {
     indprintf(indent, "datatype: %i\n", node->datatype ? node->datatype->size : -1);

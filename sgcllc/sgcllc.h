@@ -24,18 +24,18 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 #define P_RBRACE '}'
 #define P_SEMICOLON ';'
 
-#define DT_VOID 0
-#define DT_BOOL 1
-#define DT_I8 2
-#define DT_I16 3
-#define DT_I32 4
-#define DT_I64 5
-#define DT_F32 6
-#define DT_F64 7
-#define DT_ARRAY 8
-#define DT_PTR 9
-#define DT_FUNCTION 10
-#define DT_STRING 11
+#define DTT_VOID 0
+#define DTT_BOOL 1
+#define DTT_I8 2
+#define DTT_I16 3
+#define DTT_I32 4
+#define DTT_I64 5
+#define DTT_F32 6
+#define DTT_F64 7
+#define DTT_ARRAY 8
+#define DTT_PTR 9
+#define DTT_FUNCTION 10
+#define DTT_STRING 11
 
 #define VT_PRIVATE 0
 #define VT_PUBLIC 1
@@ -44,7 +44,9 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 enum {
     AST_FILE = 256,
     AST_IMPORT,
-    #define keyword(id, _) id,
+    AST_FUNC_DEFINITION,
+    AST_LVAR,
+    #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
 };
@@ -171,8 +173,8 @@ typedef struct ast_node_t
             vector_t* args;
             struct datatype_t* func_type;
             // function definition
-            struct vector_t* params;
-            struct vector_t* local_variables;
+            vector_t* params;
+            vector_t* local_variables;
             struct ast_node_t* body;
         };
         // initializer
@@ -292,6 +294,8 @@ void map_delete(map_t* map);
 
 ast_node_t* ast_file_init(location_t* loc);
 ast_node_t* ast_import_init(location_t* loc, char* path);
+ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func_name);
+ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name);
 void ast_print(ast_node_t* node);
 
 /* parser.c */
