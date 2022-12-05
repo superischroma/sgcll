@@ -16,6 +16,7 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 #define TT_NUMBER_LITERAL 3
 #define TT_CHAR_LITERAL 4
 #define TT_STRING_LITERAL 5
+#define TT_KEYWORD 6
 
 #define P_LPARENTHESIS '('
 #define P_RPARENTHESIS ')'
@@ -29,23 +30,24 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 #define DT_I16 3
 #define DT_I32 4
 #define DT_I64 5
-#define DT_UI8 6
-#define DT_UI16 7
-#define DT_UI32 8
-#define DT_UI64 9
-#define DT_F32 10
-#define DT_F64 11
-#define DT_ARRAY 12
-#define DT_PTR 13
-#define DT_FUNCTION 14
-#define DT_STRING 15
+#define DT_F32 6
+#define DT_F64 7
+#define DT_ARRAY 8
+#define DT_PTR 9
+#define DT_FUNCTION 10
+#define DT_STRING 11
 
 #define VT_PRIVATE 0
 #define VT_PUBLIC 1
 #define VT_PROTECTED 2
 
-#define AST_FILE 256
-#define AST_IMPORT 257
+enum {
+    AST_FILE = 256,
+    AST_IMPORT,
+    #define keyword(id, _) id,
+    #include "keywords.inc"
+    #undef keyword 
+};
 
 /* Structs */
 
@@ -222,6 +224,12 @@ typedef struct parser_t
     int oindex; // current index in the token stream
 } parser_t;
 
+/* sgcllc.c */
+
+extern map_t* keywords;
+
+void set_up_keywords(void);
+
 /* lex.c */
 
 lexer_t* lex_init(FILE* file);
@@ -245,8 +253,6 @@ char* buffer_export(buffer_t* buffer);
 void buffer_delete(buffer_t* buffer);
 
 /* util.c */
-
-extern map_t* keywords;
 
 bool is_alphanumeric(int c);
 bool token_has_content(token_t* token);

@@ -62,7 +62,12 @@ void lex_read_token(lexer_t* lex)
                 buffer_append(buffer, (char) lex_read(lex));
             }
             buffer_append(buffer, '\0');
-            vector_push(lex->output, content_token_init(TT_IDENTIFIER, buffer_export(buffer), lex->offset, lex->row, lex->col));
+            char* ident = buffer_export(buffer);
+            int id = (intptr_t) map_get(keywords, ident);
+            if (id)
+                vector_push(lex->output, id_token_init(TT_KEYWORD, id, lex->offset, lex->row, lex->col));
+            else
+                vector_push(lex->output, content_token_init(TT_IDENTIFIER, ident, lex->offset, lex->row, lex->col));
             buffer_delete(buffer);
             break;
         }
@@ -127,6 +132,7 @@ void lex_read_token(lexer_t* lex)
         case '{':
         case '}':
         case ';':
+        case ',':
         {
             vector_push(lex->output, id_token_init(TT_PUNCTUATOR, c, lex->offset, lex->row, lex->col));
             break;
