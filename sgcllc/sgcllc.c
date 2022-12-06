@@ -17,7 +17,7 @@ void set_up_keywords(void)
 int main(int argc, char** argv)
 {
     set_up_keywords();
-    FILE* file = fopen("test/helloworld.sgcll", "r");
+    FILE* file = fopen("test/assignment.sgcll", "r");
     lexer_t* lexer = lex_init(file);
     while (!lex_eof(lexer))
         lex_read_token(lexer);

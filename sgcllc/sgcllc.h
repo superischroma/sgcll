@@ -10,13 +10,12 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 
 /* Macros */
 
-#define TT_PUNCTUATOR 0
-#define TT_IDENTIFIER 1
-#define TT_OPERATOR 2
-#define TT_NUMBER_LITERAL 3
-#define TT_CHAR_LITERAL 4
-#define TT_STRING_LITERAL 5
-#define TT_KEYWORD 6
+#define TT_IDENTIFIER 0
+#define TT_OPERATOR 1
+#define TT_NUMBER_LITERAL 2
+#define TT_CHAR_LITERAL 3
+#define TT_STRING_LITERAL 4
+#define TT_KEYWORD 5
 
 #define P_LPARENTHESIS '('
 #define P_RPARENTHESIS ')'
@@ -46,6 +45,8 @@ enum {
     AST_IMPORT,
     AST_FUNC_DEFINITION,
     AST_LVAR,
+    AST_GVAR,
+    AST_BLOCK,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -203,7 +204,7 @@ typedef struct ast_node_t
         };
         // return value
         struct ast_node_t* retval;
-        // body
+        // AST_BLOCK
         vector_t* statements;
     };
 } ast_node_t;

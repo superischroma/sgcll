@@ -133,8 +133,9 @@ void lex_read_token(lexer_t* lex)
         case '}':
         case ';':
         case ',':
+        case '=':
         {
-            vector_push(lex->output, id_token_init(TT_PUNCTUATOR, c, lex->offset, lex->row, lex->col));
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }
         case ' ':

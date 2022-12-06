@@ -3,10 +3,16 @@
 #include <string.h>
 
 #include "sgcllc.h"
-
-#define bassert(condition) \
-    if (!(condition)) \
-        return false
+    
+int parser_get_datatype_type(parser_t* p);
+static bool parser_is_func_definition(parser_t* p);
+static bool parser_is_var_decl(parser_t* p);
+static datatype_t* parser_build_datatype(parser_t* p);
+static ast_node_t* parser_read_import(parser_t* p);
+static ast_node_t* parser_read_func_definition(parser_t* p);
+static void parser_read_func_body(parser_t* p, ast_node_t* func_node);
+static ast_node_t* parser_read_decl(parser_t* p);
+static ast_node_t* parser_read_stmt(parser_t* p);
 
 datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
 datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DTT_BOOL, 1, true };
@@ -137,7 +143,7 @@ int parser_get_datatype_type(parser_t* p)
     return -1;
 }
 
-bool parser_is_func_definition(parser_t* p)
+static bool parser_is_func_definition(parser_t* p)
 {
     int i = 1;
     for (;; i++)
@@ -145,9 +151,9 @@ bool parser_is_func_definition(parser_t* p)
         token_t* token = parser_far_peek(p, i);
         if (token == NULL)
             return false;
-        if (token->type == TT_PUNCTUATOR && token->id == P_LPARENTHESIS)
+        if (token->type == TT_KEYWORD && token->id == P_LPARENTHESIS)
             break;
-        if (token->type != TT_IDENTIFIER)
+        if (token->type != TT_IDENTIFIER && token->type != TT_KEYWORD)
             return false;
     }
     for (i++;; i++)
@@ -155,15 +161,20 @@ bool parser_is_func_definition(parser_t* p)
         token_t* token = parser_far_peek(p, i);
         if (token == NULL)
             return false;
-        if (token->type == TT_PUNCTUATOR && token->id == P_RPARENTHESIS)
+        if (token->type == TT_KEYWORD && token->id == P_RPARENTHESIS)
             break;
     }
     token_t* lbrace = parser_far_peek(p, ++i);
-    if (lbrace->type != TT_PUNCTUATOR)
+    if (lbrace->type != TT_KEYWORD)
         return false;
     if (lbrace->id != P_LBRACE)
         return false;
     return true;
+}
+
+static bool parser_is_var_decl(parser_t* p)
+{
+    return false;
 }
 
 static datatype_t* parser_build_datatype(parser_t* p)
@@ -213,9 +224,9 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
 {
     datatype_t* dt = parser_build_datatype(p);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
-    ast_node_t* func_node = map_put(p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
+    ast_node_t* func_node = map_put(p->lenv ? p->lenv : p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
     parser_expect(p, '(');
-    p->lenv = map_init(p->lenv ? p->lenv : p->genv, 100);
+    map_t* func_env = p->lenv = map_init(p->lenv ? p->lenv : p->genv, 100);
     for (;;)
     {
         if (parser_check(p, ')'))
@@ -232,7 +243,34 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         ast_node_t* lvar = map_put(p->lenv, param_name_token->content, ast_lvar_init(pdt, param_name_token->loc, param_name_token->content));
         vector_push(func_node->params, lvar);
     }
+    parser_expect(p, '{');
+    //parser_read_func_body(p, func_node);
+    p->lenv = p->lenv->parent;
+    map_delete(func_env);
     return func_node;
+}
+
+static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
+{
+    for (;;)
+    {
+        if (parser_check(p, '}'))
+            break;
+        vector_push(func_node->body->statements, parser_read_stmt(p));
+    }
+}
+
+static ast_node_t* parser_read_decl(parser_t* p)
+{
+    if (parser_is_func_definition(p))
+        return parser_read_func_definition(p);
+    return NULL;
+}
+
+static ast_node_t* parser_read_stmt(parser_t* p)
+{
+    if (parser_is_var_decl(p))
+        {}
 }
 
 token_t* parser_read(parser_t* p)
@@ -242,8 +280,8 @@ token_t* parser_read(parser_t* p)
         return NULL;
     if (parser_check(p, KW_IMPORT))
         return vector_push(p->file->imports, parser_read_import(p));
-    if (parser_is_func_definition(p)) 
-        return vector_push(p->file->decls, parser_read_func_definition(p));
+    ast_node_t* node = parser_read_decl(p);
+    if (node) return vector_push(p->file->decls, node);
     ast_print(p->file);
     if (token_has_content(next))
         errorp(next->loc->row, next->loc->col, "encountered unknown token: %s", next->content);
