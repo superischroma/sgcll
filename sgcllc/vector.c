@@ -42,6 +42,20 @@ void* vector_set(vector_t* vec, int index, void* element)
     return vec->data[index] = element;
 }
 
+void* vector_top(vector_t* vec)
+{
+    if (vec->size <= 0)
+        return NULL;
+    return vec->data[vec->size - 1];
+}
+
+void vector_clear(vector_t* vec, int capacity)
+{
+    if (capacity >= 0)
+        vec->data = realloc(vec->data, sizeof(void*) * (vec->capacity = capacity));
+    vec->size = 0;
+}
+
 void vector_delete(vector_t* vec)
 {
     free(vec->data);

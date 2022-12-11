@@ -21,9 +21,22 @@ int main(int argc, char** argv)
     lexer_t* lexer = lex_init(file);
     while (!lex_eof(lexer))
         lex_read_token(lexer);
+    for (int i = 0; i < lexer->output->size; i++)
+    {
+        token_t* token = vector_get(lexer->output, i);
+        if (token_has_content(token))
+            printf("%s ", token->content);
+        else
+            printf("%c ", token->id);
+    }
     parser_t* parser = parser_init(lexer);
     while (!parser_eof(parser))
         parser_read(parser);
+    ast_print(parser->nfile);
+    FILE* out = fopen("test/assignment.s", "w");
+    emitter_t* emitter = emitter_init(parser, out);
+    emitter_emit(emitter);
+    fclose(out);
     lex_delete(lexer);
     fclose(file);
 }

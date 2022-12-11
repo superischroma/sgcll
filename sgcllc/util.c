@@ -5,6 +5,8 @@
 
 #include "sgcllc.h"
 
+#define LOWEST_PRECEDENCE 2
+
 bool is_alphanumeric(int c)
 {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
@@ -12,7 +14,7 @@ bool is_alphanumeric(int c)
 
 bool token_has_content(token_t* token)
 {
-    return token != NULL && (token->type == TT_IDENTIFIER || token->type == TT_STRING_LITERAL);
+    return token != NULL && (token->type == TT_IDENTIFIER || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL);
 }
 
 char* unwrap_string_literal(char* slit)
@@ -32,4 +34,15 @@ void indprintf(int indent, const char* fmt, ...)
     va_start(args, fmt);
     vfprintf(stdout, fmt, args);
     va_end(args);
+}
+
+int precedence(int op)
+{
+    switch (op)
+    {
+        case ',': return LOWEST_PRECEDENCE;
+        case '=':
+            return LOWEST_PRECEDENCE - 1;
+    }
+    return -1;
 }

@@ -6,22 +6,27 @@
 
 /* Typedefs */
 
-typedef int token_type, ast_node_type, datatype_type, visibility_type;
+typedef int token_type, ast_node_type, datatype_type, visibility_type, register_type;
 
 /* Macros */
 
+/* Token Type */
+
 #define TT_IDENTIFIER 0
-#define TT_OPERATOR 1
-#define TT_NUMBER_LITERAL 2
-#define TT_CHAR_LITERAL 3
-#define TT_STRING_LITERAL 4
-#define TT_KEYWORD 5
+#define TT_NUMBER_LITERAL 1
+#define TT_CHAR_LITERAL 2
+#define TT_STRING_LITERAL 3
+#define TT_KEYWORD 4
+
+/* Punctuator Type */
 
 #define P_LPARENTHESIS '('
 #define P_RPARENTHESIS ')'
 #define P_LBRACE '{'
 #define P_RBRACE '}'
 #define P_SEMICOLON ';'
+
+/* Datatype Type */
 
 #define DTT_VOID 0
 #define DTT_BOOL 1
@@ -36,9 +41,40 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type;
 #define DTT_FUNCTION 10
 #define DTT_STRING 11
 
+/* Visibility Type */
+
 #define VT_PRIVATE 0
 #define VT_PUBLIC 1
 #define VT_PROTECTED 2
+
+/* vector_t Helpful Macros */
+
+#define DEFAULT_CAPACITY 10
+#define DEFAULT_ALLOC_DELTA 5
+#define RETAIN_OLD_CAPACITY -1
+
+/* Register Types */
+#define REG_A 'a'
+#define REG_B 'b'
+#define REG_C 'c'
+#define REG_D 'd'
+#define REG_SRC 'o'
+#define REG_DEST 't'
+#define REG_STACK_BASE 'e'
+#define REG_STACK_TOP 's'
+#define REG_8 '8'
+#define REG_9 '9'
+#define REG_10 '0'
+#define REG_11 '1'
+#define REG_12 '2'
+#define REG_13 '3'
+#define REG_14 '4'
+#define REG_15 '5'
+#define REG_FLOAT 'x'
+
+/* Functional Macros */
+#define min(a, b) (a < b ? a : b)
+#define max(a, b) (a > b ? a : b)
 
 enum {
     AST_FILE = 256,
@@ -47,6 +83,9 @@ enum {
     AST_LVAR,
     AST_GVAR,
     AST_BLOCK,
+    AST_ILITERAL,
+    AST_FLITERAL,
+    AST_SLITERAL,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -75,7 +114,6 @@ typedef struct
     int capacity;
     int alloc_delta;
 } vector_t;
-
 
 typedef struct
 {
@@ -132,59 +170,51 @@ typedef struct ast_node_t
     location_t* loc;
     union
     {
-        // i8/i16/i32/i64
+        // AST_ILITERAL
         long long ivalue;
-        // f32/f64
+        // AST_FLITERAL
         struct
         {
             double fvalue;
             char* flabel;
         };
-        // string
+        // AST_SLITERAL
         struct
         {
             char* svalue;
             char* slabel;
         };
-        // local/global variable
+        // AST_LVAR/AST_GVAR
         struct
         {
             char* var_name;
-            // local
+            // AST_LVAR
             int lvoffset;
-            // global
+            // AST_GVAR
             char* gvlabel;
+            struct ast_node_t* gvinit;
         };
-        // binary operator
+        // AST_BINARY_OP
         struct
         {
             struct ast_node_t* lhs;
             struct ast_node_t* rhs;
         };
-        // unary operator
-        struct
-        {
-            struct ast_node_t* operand;
-        };
-        // function call/definition
+        // AST_UNARY_OP
+        struct ast_node_t* operand;
+        // AST_FUNC_CALL/AST_FUNC_DEFINITION
         struct
         {
             char* func_name;
-            // function call
+            // AST_FUNC_CALL
             vector_t* args;
             struct datatype_t* func_type;
-            // function definition
+            // AST_FUNC_DEFINITION
             vector_t* params;
             vector_t* local_variables;
             struct ast_node_t* body;
         };
-        // initializer
-        struct
-        {
-            struct ast_node_t* initval;
-            datatype_t* dest_type;
-        };
-        // if statement/ternary operator
+        // AST_IF
         struct
         {
             struct ast_node_t* condition;
@@ -198,11 +228,8 @@ typedef struct ast_node_t
             vector_t* imports;
         };
         // AST_IMPORT
-        struct
-        {
-            char* path;
-        };
-        // return value
+        char* path;
+        // AST_RETURN
         struct ast_node_t* retval;
         // AST_BLOCK
         vector_t* statements;
@@ -221,11 +248,18 @@ typedef struct map_t
 typedef struct parser_t
 {
     lexer_t* lex;
-    ast_node_t* file;
+    ast_node_t* nfile;
     map_t* genv;
     map_t* lenv;
     int oindex; // current index in the token stream
 } parser_t;
+
+typedef struct emitter_t
+{
+    parser_t* p;
+    FILE* out;
+    int stackoffset;
+} emitter_t;
 
 /* sgcllc.c */
 
@@ -261,6 +295,7 @@ bool is_alphanumeric(int c);
 bool token_has_content(token_t* token);
 char* unwrap_string_literal(char* slit);
 void indprintf(int indent, const char* fmt, ...);
+int precedence(int op);
 
 /* token.c */
 
@@ -275,12 +310,15 @@ void* vector_push(vector_t* vec, void* element);
 void* vector_pop(vector_t* vec);
 void* vector_get(vector_t* vec, int index);
 void* vector_set(vector_t* vec, int index, void* element);
+void* vector_top(vector_t* vec);
+void vector_clear(vector_t* vec, int capacity);
 void vector_delete(vector_t* vec);
 
 /* error.c */
 
 void errorl(lexer_t* lex, char* fmt, ...);
 void errorp(int row, int col, char* fmt, ...);
+void errore(int row, int col, char* fmt, ...);
 
 /* map.c */
 
@@ -297,6 +335,9 @@ ast_node_t* ast_file_init(location_t* loc);
 ast_node_t* ast_import_init(location_t* loc, char* path);
 ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func_name);
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name);
+ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue);
+ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue);
+ast_node_t* ast_binary_op_init(ast_node_type type, location_t* loc, ast_node_t* lhs, ast_node_t* rhs);
 void ast_print(ast_node_t* node);
 
 /* parser.c */
@@ -304,5 +345,11 @@ void ast_print(ast_node_t* node);
 parser_t* parser_init(lexer_t* lex);
 bool parser_eof(parser_t* p);
 token_t* parser_read(parser_t* p);
+
+/* emitter.c */
+
+emitter_t* emitter_init(parser_t* p, FILE* out);
+emitter_t* emitter_delete(emitter_t* e);
+void emitter_emit(emitter_t* e);
 
 #endif

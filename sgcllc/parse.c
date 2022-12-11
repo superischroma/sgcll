@@ -4,6 +4,7 @@
 
 #include "sgcllc.h"
     
+static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
 int parser_get_datatype_type(parser_t* p);
 static bool parser_is_func_definition(parser_t* p);
 static bool parser_is_var_decl(parser_t* p);
@@ -12,7 +13,9 @@ static ast_node_t* parser_read_import(parser_t* p);
 static ast_node_t* parser_read_func_definition(parser_t* p);
 static void parser_read_func_body(parser_t* p, ast_node_t* func_node);
 static ast_node_t* parser_read_decl(parser_t* p);
+static ast_node_t* parser_read_lvar_decl(parser_t* p);
 static ast_node_t* parser_read_stmt(parser_t* p);
+static ast_node_t* parser_read_expr(parser_t* p);
 
 datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
 datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DTT_BOOL, 1, true };
@@ -26,18 +29,45 @@ datatype_t* t_ui32 = &(datatype_t){ VT_PUBLIC, DTT_I32, 4, true };
 datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, true };
 datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
 datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
+datatype_t* t_string = NULL;
+
+datatype_t* get_t_string(void)
+{
+    if (t_string) return t_string;
+    return t_string = &(datatype_t){ VT_PUBLIC, DTT_STRING, 8, false, t_i8 };
+}
 
 parser_t* parser_init(lexer_t* lex)
 {
     parser_t* p = calloc(1, sizeof(parser_t));
     location_t* loc = calloc(1, sizeof(location_t));
     loc->row = loc->col = loc->offset = 0;
-    p->file = ast_file_init(loc);
+    p->nfile = ast_file_init(loc);
     p->genv = map_init(NULL, 50);
     p->lenv = NULL;
     p->lex = lex;
     p->oindex = 0;
     return p;
+}
+
+static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
+{
+    switch (token->type)
+    {
+        case TT_IDENTIFIER:
+        {
+            ast_node_t* ident = map_get(p->lenv ? p->lenv : p->genv, token->content);
+            if (!ident)
+                errorp(token->loc->row, token->loc->col, "symbol not defined: %s", token->content);
+            return ident;
+        }
+        case TT_CHAR_LITERAL:
+            return ast_iliteral_init(t_i8, token->loc, atoll(token->content));
+        case TT_NUMBER_LITERAL:
+            return ast_iliteral_init(t_i32, token->loc, atoll(token->content));
+        default:
+            errorp(token->loc->row, token->loc->col, "unknown token");
+    }
 }
 
 static token_t* parser_get(parser_t* p)
@@ -174,7 +204,28 @@ static bool parser_is_func_definition(parser_t* p)
 
 static bool parser_is_var_decl(parser_t* p)
 {
-    return false;
+    int i = 1;
+    for (;; i++)
+    {
+        token_t* token = parser_far_peek(p, i);
+        if (token == NULL)
+            return false;
+        if (token->type == TT_KEYWORD)
+            continue;
+        if (token->type == TT_IDENTIFIER)
+        {
+            if (map_get_local(p->lenv ? p->lenv : p->genv, token->content))
+                return false;
+            break;
+        }
+        return false;
+    }
+    token_t* equal_or_semicolon = parser_far_peek(p, ++i);
+    if (equal_or_semicolon == NULL)
+        return false;
+    if (equal_or_semicolon->id != '=' && equal_or_semicolon->id != ';')
+        return false;
+    return true;
 }
 
 static datatype_t* parser_build_datatype(parser_t* p)
@@ -183,6 +234,7 @@ static datatype_t* parser_build_datatype(parser_t* p)
     dt->visibility = VT_PRIVATE;
     dt->usign = false;
     dt->type = DTT_I32;
+    dt->size = 4;
     for (;; parser_get(p))
     {
         token_t* token = parser_peek(p);
@@ -194,6 +246,22 @@ static datatype_t* parser_build_datatype(parser_t* p)
         if (dtt != -1)
         {
             dt->type = dtt;
+            switch (dt->type)
+            {
+                case DTT_VOID: dt->size = 0; break;
+                case DTT_I8:
+                case DTT_BOOL:
+                    dt->size = 1;
+                    break;
+                case DTT_I16: dt->size = 2; break;
+                case DTT_I32:
+                case DTT_F32:
+                    dt->size = 4;
+                    break;
+                default:
+                    dt->size = 8;
+                    break;
+            }
             continue;
         }
         switch (parser_peek(p)->id)
@@ -244,7 +312,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         vector_push(func_node->params, lvar);
     }
     parser_expect(p, '{');
-    //parser_read_func_body(p, func_node);
+    parser_read_func_body(p, func_node);
     p->lenv = p->lenv->parent;
     map_delete(func_env);
     return func_node;
@@ -255,8 +323,14 @@ static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
     for (;;)
     {
         if (parser_check(p, '}'))
+        {
+            parser_get(p);
             break;
-        vector_push(func_node->body->statements, parser_read_stmt(p));
+        }
+        ast_node_t* stmt = parser_read_stmt(p);
+        if (stmt->type == AST_LVAR)
+            vector_push(func_node->local_variables, stmt);
+        vector_push(func_node->body->statements, stmt);
     }
 }
 
@@ -267,10 +341,94 @@ static ast_node_t* parser_read_decl(parser_t* p)
     return NULL;
 }
 
+static ast_node_t* parser_read_lvar_decl(parser_t* p)
+{
+    datatype_t* dt = parser_build_datatype(p);
+    token_t* var_name_token = parser_expect_type(p, TT_IDENTIFIER);
+    ast_node_t* var_node = map_put(p->lenv ? p->lenv : p->genv, var_name_token->content, ast_lvar_init(dt, var_name_token->loc, var_name_token->content));
+    if (parser_check(p, '='))
+    {
+        parser_unget(p);
+        return var_node;
+    }
+    parser_expect(p, ';');
+    return var_node;
+}
+
 static ast_node_t* parser_read_stmt(parser_t* p)
 {
     if (parser_is_var_decl(p))
-        {}
+        return parser_read_lvar_decl(p);
+    return parser_read_expr(p);
+}
+
+static ast_node_t* parser_read_expr(parser_t* p)
+{
+    vector_t* stack = vector_init(20, 10);
+    vector_t* expr_result = vector_init(20, 10);
+    for (;;)
+    {
+        token_t* token = parser_get(p);
+        if (token == NULL)
+            errorp(0, 0, "unexpected end of file");
+        if (token->id == ';')
+            break;
+        if (token->type == TT_IDENTIFIER || token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
+            vector_push(expr_result, token);
+        else if (token->id == '(')
+            vector_push(stack, token);
+        else if (token->id == ')' || token->id == ',')
+        {
+            while (vector_top(stack) != NULL && ((token_t*) vector_top(stack))->id != '(')
+                vector_push(expr_result, vector_pop(stack));
+            if (token->id == ')')
+                vector_pop(stack);
+        }
+        else
+        {
+            while (stack->size && precedence(token->id) <= precedence(((token_t*) vector_top(stack))->id))
+                vector_push(expr_result, vector_pop(stack));
+            vector_push(stack, token);
+        }
+    }
+    while (vector_top(stack) != NULL)
+        vector_push(expr_result, vector_pop(stack));
+    vector_clear(stack, RETAIN_OLD_CAPACITY);
+    if (!expr_result->size)
+        errorp(parser_peek(p)->loc->row, parser_peek(p)->loc->col, "null statement is not allowed");
+    for (int i = 0; i < expr_result->size; i++)
+    {
+        token_t* token = (token_t*) vector_get(expr_result, i);
+        if (token_has_content(token))
+            printf("result[%i] = %s\n", i, token->content);
+        else
+            printf("result[%i] = %i\n", i, token->id);
+    }
+    for (int i = 0; i < expr_result->size; i++)
+    {
+        token_t* token = (token_t*) vector_get(expr_result, i);
+        if (token->type == TT_IDENTIFIER || token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
+            vector_push(stack, ast_get_by_token(p, token));
+        if (token->type == TT_KEYWORD)
+        {
+            switch (token->id)
+            {
+                case '=':
+                {
+                    ast_node_t* rhs = vector_pop(stack);
+                    ast_node_t* lhs = vector_pop(stack);
+                    vector_push(stack, ast_binary_op_init(token->id, token->loc, lhs, rhs));
+                    break;
+                }
+            }
+        }
+    }
+    if (!stack->size)
+        errorp(0, 0, "dev error: you messed up with the stack goofball");
+    ast_node_t* top = (ast_node_t*) vector_top(stack);
+    vector_delete(stack);
+    vector_delete(expr_result);
+    return top;
 }
 
 token_t* parser_read(parser_t* p)
@@ -279,10 +437,10 @@ token_t* parser_read(parser_t* p)
     if (next == NULL)
         return NULL;
     if (parser_check(p, KW_IMPORT))
-        return vector_push(p->file->imports, parser_read_import(p));
+        return vector_push(p->nfile->imports, parser_read_import(p));
     ast_node_t* node = parser_read_decl(p);
-    if (node) return vector_push(p->file->decls, node);
-    ast_print(p->file);
+    if (node) return vector_push(p->nfile->decls, node);
+    ast_print(p->nfile);
     if (token_has_content(next))
         errorp(next->loc->row, next->loc->col, "encountered unknown token: %s", next->content);
     else
