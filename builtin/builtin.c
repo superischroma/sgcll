@@ -10,7 +10,7 @@ int __builtin_i32_dec_itos(int n, char* buffer)
         n = -n;
     i = 0;
     do
-        buffer[i++] = abs(n % 10) + '0';
+        buffer[i++] = __builtin_abs(n % 10) + '0';
     while (n /= 10);
     if (sign < 0)
         buffer[i++] = '-';
