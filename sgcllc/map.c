@@ -89,9 +89,11 @@ void* map_get_local(map_t* map, char* k)
 void* map_get(map_t* map, char* k)
 {
     void* val = map_get_local(map, k);
-    if (val == NULL && map->parent)
-        return map_get(map->parent, k);
-    return val;
+    if (val)
+        return val;
+    if (!map->parent)
+        return NULL;
+    return map_get(map->parent, k);
 }
 
 // does not deallocate memory at K
@@ -111,6 +113,7 @@ bool map_erase(map_t* map, char* k)
 
 void map_delete(map_t* map)
 {
+    if (!map) return;
     free(map->key);
     free(map->value);
     free(map);

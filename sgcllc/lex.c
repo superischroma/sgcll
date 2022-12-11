@@ -51,6 +51,7 @@ void lex_read_token(lexer_t* lex)
     {
         case 'a' ... 'z':
         case 'A' ... 'Z':
+        case '_':
         {
             buffer_t* buffer = buffer_init(5, 5);
             buffer_append(buffer, c);
@@ -80,7 +81,7 @@ void lex_read_token(lexer_t* lex)
                 buffer_append(buffer, 'x');
                 lex_read(lex);
             }
-            while (1)
+            for (;;)
             {
                 int c = lex_peek(lex);
                 if ((c < '0' || c > '9') && c != '.')
@@ -127,13 +128,21 @@ void lex_read_token(lexer_t* lex)
             buffer_delete(buffer);
             break;
         }
-        case '(':
-        case ')':
-        case '{':
-        case '}':
-        case ';':
-        case ',':
-        case '=':
+        case KW_LPAREN:
+        case KW_RPAREN:
+        case KW_LBRACE:
+        case KW_RBRACE:
+        case KW_SEMICOLON:
+        case KW_COMMA:
+        case OP_ASSIGN:
+        {
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
+            break;
+        }
+        case OP_ADD:
+        case OP_SUB:
+        case OP_MUL:
+        case OP_DIV:
         {
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
@@ -154,6 +163,7 @@ void lex_read_token(lexer_t* lex)
 
 void lex_delete(lexer_t* lex)
 {
+    if (!lex) return;
     filehistory_delete(lex->history);
     vector_delete(lex->output);
     free(lex);

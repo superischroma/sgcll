@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include "sgcllc.h"
 
@@ -9,6 +10,20 @@ vector_t* vector_init(int capacity, int alloc_delta)
     vec->size = 0;
     vec->capacity = capacity;
     vec->alloc_delta = alloc_delta;
+    return vec;
+}
+
+vector_t* vector_qinit(int count, ...)
+{
+    vector_t* vec = calloc(1, sizeof(vector_t));
+    vec->data = malloc(sizeof(void*) * count);
+    vec->size = vec->capacity = count;
+    vec->alloc_delta = DEFAULT_ALLOC_DELTA;
+    va_list args;
+    va_start(args, count);
+    for (int i = 0; i < count; i++)
+        vector_set(vec, i, va_arg(args, void*));
+    va_end(args);
     return vec;
 }
 

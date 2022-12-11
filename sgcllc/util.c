@@ -5,11 +5,14 @@
 
 #include "sgcllc.h"
 
-#define LOWEST_PRECEDENCE 2
-
 bool is_alphanumeric(int c)
 {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+bool isfloattype(datatype_type dtt)
+{
+    return dtt == DTT_F32 || dtt == DTT_F64;
 }
 
 bool token_has_content(token_t* token)
@@ -34,15 +37,4 @@ void indprintf(int indent, const char* fmt, ...)
     va_start(args, fmt);
     vfprintf(stdout, fmt, args);
     va_end(args);
-}
-
-int precedence(int op)
-{
-    switch (op)
-    {
-        case ',': return LOWEST_PRECEDENCE;
-        case '=':
-            return LOWEST_PRECEDENCE - 1;
-    }
-    return -1;
 }

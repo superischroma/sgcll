@@ -45,6 +45,24 @@ ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func
     });
 }
 
+ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func, vector_t* args)
+{
+    return ast_init(AST_FUNC_CALL, dt, loc, &(ast_node_t){
+        .func = func,
+        .args = args
+    });
+}
+
+ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params)
+{
+    return ast_init(AST_FUNC_DEFINITION, dt, NULL, &(ast_node_t){
+        .func_name = func_name,
+        .params = params,
+        .local_variables = NULL,
+        .body = NULL
+    });
+}
+
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name)
 {
     return ast_init(AST_LVAR, dt, loc, &(ast_node_t){
@@ -67,9 +85,9 @@ ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue)
     });
 }
 
-ast_node_t* ast_binary_op_init(ast_node_type type, location_t* loc, ast_node_t* lhs, ast_node_t* rhs)
+ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* lhs, ast_node_t* rhs)
 {
-    return ast_init(type, NULL, loc, &(ast_node_t){
+    return ast_init(type, dt, loc, &(ast_node_t){
         .lhs = lhs,
         .rhs = rhs
     });
@@ -175,7 +193,8 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indprintf(indent, "}\n");
             break;
         }
-        case '=':
+        case OP_ASSIGN:
+        case OP_ADD:
         {
             indprintf(indent, "AST_BINARY_OP (%c) {\n", node->type);
             indent++;
@@ -190,6 +209,22 @@ static void ast_print_recur(ast_node_t* node, int indent)
             ast_print_recur(node->rhs, indent);
             indent--;
             indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_FUNC_CALL:
+        {
+            indprintf(indent, "AST_FUNC_CALL {\n");
+            indent++;
+            std_ast_print(node, indent);
+            indprintf(indent, "func: %s\n", node->func->func_name);
+            indprintf(indent, "args: [\n");
+            indent++;
+            for (int i = 0; i < node->args->size; i++)
+                ast_print_recur((ast_node_t*) vector_get(node->args, i), indent);
+            indent--;
+            indprintf(indent, "]\n");
             indent--;
             indprintf(indent, "}\n");
             break;

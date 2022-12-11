@@ -1,6 +1,7 @@
 // Much of the code for this project is heavily inspired by https://github.com/rui314/8cc
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "sgcllc.h"
 
@@ -17,7 +18,7 @@ void set_up_keywords(void)
 int main(int argc, char** argv)
 {
     set_up_keywords();
-    FILE* file = fopen("test/assignment.sgcll", "r");
+    FILE* file = fopen("test/math.sgcll", "r");
     lexer_t* lexer = lex_init(file);
     while (!lex_eof(lexer))
         lex_read_token(lexer);
@@ -33,10 +34,13 @@ int main(int argc, char** argv)
     while (!parser_eof(parser))
         parser_read(parser);
     ast_print(parser->nfile);
-    FILE* out = fopen("test/assignment.s", "w");
+    FILE* out = fopen("test/math.s", "w");
     emitter_t* emitter = emitter_init(parser, out);
     emitter_emit(emitter);
+    emitter_delete(emitter);
     fclose(out);
+    parser_delete(parser);
     lex_delete(lexer);
     fclose(file);
+    system("gcc -o test/math.exe test/math.s builtin/builtin.o");
 }
