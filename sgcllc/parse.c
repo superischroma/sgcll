@@ -4,7 +4,7 @@
 
 #include "sgcllc.h"
 
-#define LOWEST_PRECEDENCE 3
+#define LOWEST_PRECEDENCE 4
     
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
 int parser_get_datatype_type(parser_t* p);
@@ -48,7 +48,11 @@ int precedence(int op)
         case OP_ASSIGN:
             return LOWEST_PRECEDENCE - 1;
         case OP_ADD:
+        case OP_SUB:
             return LOWEST_PRECEDENCE - 2;
+        case OP_MUL:
+        case OP_DIV:
+            return LOWEST_PRECEDENCE - 3;
     }
     return -1;
 }
@@ -509,6 +513,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
                 case OP_SUB:
                 case OP_MUL:
                 case OP_DIV:
+                case OP_MOD:
                 {
                     ast_node_t* rhs = vector_pop(stack);
                     ast_node_t* lhs = vector_pop(stack);

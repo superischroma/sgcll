@@ -142,10 +142,45 @@ void lex_read_token(lexer_t* lex)
         case OP_ADD:
         case OP_SUB:
         case OP_MUL:
-        case OP_DIV:
+        case OP_MOD:
         {
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
+        }
+        case OP_DIV:
+        {
+            int next = lex_peek(lex);
+            if (next == OP_DIV) // single-line comment
+            {
+                lex_read(lex);
+                for (;;)
+                {
+                    int c = lex_read(lex);
+                    if (c == '\n' || c == EOF)
+                        break;
+                }
+                break;
+            }
+            if (next == OP_MUL)
+            {
+                lex_read(lex);
+                for (;;)
+                {
+                    int c = lex_read(lex);
+                    if (c == EOF)
+                        errorl(lex, "unterminated block comment");
+                    if (c == OP_MUL)
+                    {
+                        if (lex_peek(lex) == OP_DIV)
+                        {
+                            lex_read(lex);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
         }
         case ' ':
         case '\n':

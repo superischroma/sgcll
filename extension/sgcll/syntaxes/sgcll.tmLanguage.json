@@ -23,16 +23,28 @@
 	],
 	"repository": {
 		"comments": {
-			"patterns": [{
-				"begin": "//",
-				"beginCaptures": {
-					"0": {
-						"name": "comment.line.double-slash"
-					}
+			"patterns": [
+				{
+					"begin": "//",
+					"beginCaptures": {
+						"0": {
+							"name": "comment.line.double-slash"
+						}
+					},
+					"end": "\\n",
+					"name": "comment.line.double-slash.sgcll"
 				},
-				"end": "\\n",
-				"name": "comment.line.double-slash.sgcll"
-			}]
+				{
+					"begin": "/\\*",
+					"beginCaptures": {
+						"0": {
+							"name": "comment.block.slash-asterisk"
+						}
+					},
+					"end": "\\*/",
+					"name": "comment.block.sgcll"
+				}
+			]
 		},
 		"keywords": {
 			"patterns": [{

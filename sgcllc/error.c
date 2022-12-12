@@ -37,3 +37,12 @@ void errore(int row, int col, char* fmt, ...)
     va_end(args);
     exit(EXIT_FAILURE);
 }
+
+void errorc(char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    errorf(0, 0, "compiler", fmt, args);
+    va_end(args);
+    exit(EXIT_FAILURE);
+}

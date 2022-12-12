@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "sgcllc.h"
 
@@ -15,10 +16,30 @@ void set_up_keywords(void)
     #undef keyword
 }
 
+bool chk_extension(char* path, int len)
+{
+    char extension[] = ".sgcll";
+    if (len < 6)
+        return false;
+    for (int i = sizeof(extension) - 2, j = 1; i >= 0; i--, j++)
+    {
+        printf("%c = %c", path[len - j], extension[i]);
+        if (path[len - j] != extension[i])
+            return false;
+    }
+    return true;
+}
+
 int main(int argc, char** argv)
 {
+    if (argc != 2)
+        errorc("only one file input is supported currently");
     set_up_keywords();
-    FILE* file = fopen("test/math.sgcll", "r");
+    char* path = argv[1];
+    int pathl = strlen(path);
+    if (!chk_extension(path, pathl))
+        errorc("input file does not have extension .sgcll");
+    FILE* file = fopen(path, "r");
     lexer_t* lexer = lex_init(file);
     while (!lex_eof(lexer))
         lex_read_token(lexer);
@@ -34,7 +55,10 @@ int main(int argc, char** argv)
     while (!parser_eof(parser))
         parser_read(parser);
     ast_print(parser->nfile);
-    FILE* out = fopen("test/math.s", "w");
+    char* assembly = calloc(pathl, sizeof(char));
+    strcpy(assembly, path);
+    assembly[pathl - 4] = '\0';
+    FILE* out = fopen(assembly, "w");
     emitter_t* emitter = emitter_init(parser, out);
     emitter_emit(emitter);
     emitter_delete(emitter);
@@ -42,5 +66,8 @@ int main(int argc, char** argv)
     parser_delete(parser);
     lex_delete(lexer);
     fclose(file);
-    system("gcc -o test/math.exe test/math.s builtin/builtin.o");
+    char link[1024];
+    sprintf(link, "gcc -o a.exe %s builtin/builtin.o", assembly);
+    system(link);
+    free(assembly);
 }

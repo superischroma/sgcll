@@ -171,7 +171,7 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
     }
 }
 
-static void emit_int_arith(emitter_t* e, ast_node_t* op)
+static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
     char* operation = NULL;
@@ -179,17 +179,49 @@ static void emit_int_arith(emitter_t* e, ast_node_t* op)
     {
         case OP_ADD: operation = "add"; break;
         case OP_SUB: operation = "sub"; break;
-        case OP_MUL: operation = "imul"; break;
-        case OP_DIV: operation = "idiv"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
     emit_expr(e, rhs);
     emitter_stash_int_reg(e, find_register(REG_A, op->datatype->size));
     emit_expr(e, lhs);
-    // subl %rax, %rbx
-    // %rbx - %rax
     emit("%s%c %%%s, %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), find_register(REG_A, op->datatype->size));
+}
+
+static void emit_add_sub(emitter_t* e, ast_node_t* op)
+{
+    if (!isfloattype(op->datatype->type))
+        emit_int_add_sub(e, op);
+    /* float add sub here... */
+}
+
+static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* operation = NULL;
+    switch (op->type)
+    {
+        case OP_MUL: operation = "imul"; break;
+        case OP_DIV:
+        case OP_MOD:
+            operation = "idiv"; break;
+        default:
+            errore(op->loc->row, op->loc->col, "unknown operation");
+    }
+    char* regA = find_register(REG_A, op->datatype->size);
+    emit_expr(e, rhs);
+    emitter_stash_int_reg(e, regA);
+    emit_expr(e, lhs);
+    emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size));
+    if (op->type == OP_MOD)
+        emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), find_register(REG_D, op->datatype->size), regA);
+}
+
+static void emit_mul_div(emitter_t* e, ast_node_t* op)
+{
+    if (!isfloattype(op->datatype->type))
+        emit_int_mul_div(e, op);
+    /* float mul div here... */
 }
 
 static void emit_func_call(emitter_t* e, ast_node_t* call)
@@ -219,10 +251,15 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case OP_ADD:
         case OP_SUB:
+        {
+            emit_add_sub(e, expr);
+            break;
+        }
         case OP_MUL:
         case OP_DIV:
+        case OP_MOD:
         {
-            emit_int_arith(e, expr);
+            emit_mul_div(e, expr);
             break;
         }
         case AST_ILITERAL:

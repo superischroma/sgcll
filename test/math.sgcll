@@ -1,5 +1,10 @@
+// integer math tests
+
 i32 main()
 {
-    i32 i = 5;
-    __builtin_i32_println(i + i + 3);
+    /* addition */ __builtin_i32_println(5 + 3);
+    /* subtraction */ __builtin_i32_println(5 - 3);
+    /* multiplication */ __builtin_i32_println(5 * 3);
+    /* division */ __builtin_i32_println(8 / 2);
+    /* modulo */ __builtin_i32_println(5 % 3);
 }

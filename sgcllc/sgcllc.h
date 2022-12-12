@@ -80,6 +80,7 @@ enum {
     OP_SUB = '-',
     OP_MUL = '*',
     OP_DIV = '/',
+    OP_MOD = '%',
     AST_FILE = 256,
     AST_IMPORT,
     AST_FUNC_DEFINITION,
@@ -329,6 +330,7 @@ void vector_delete(vector_t* vec);
 void errorl(lexer_t* lex, char* fmt, ...);
 void errorp(int row, int col, char* fmt, ...);
 void errore(int row, int col, char* fmt, ...);
+void errorc(char* fmt, ...);
 
 /* map.c */
 
