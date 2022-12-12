@@ -52,9 +52,10 @@ int precedence(int op)
             return LOWEST_PRECEDENCE - 2;
         case OP_MUL:
         case OP_DIV:
+        case OP_MOD:
             return LOWEST_PRECEDENCE - 3;
     }
-    return -1;
+    return LOWEST_PRECEDENCE + 1;
 }
 
 static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
@@ -422,6 +423,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
         token_t* token = parser_get(p);
         if (token == NULL)
             errorp(0, 0, "unexpected end of file");
+        printf("token: %c\n", token->id);
         if (token->id == ';')
             break;
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
@@ -447,7 +449,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
         }
         else
         {
-            while (stack->size && precedence(token->id) > precedence(((token_t*) vector_top(stack))->id))
+            while (vector_top(stack) != NULL && precedence(token->id) > precedence(((token_t*) vector_top(stack))->id))
                 vector_push(expr_result, vector_pop(stack));
             vector_push(stack, token);
         }
@@ -478,7 +480,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
         if (token_has_content(token))
             printf("result[%i] = %s\n", i, token->content);
         else
-            printf("result[%i] = %i\n", i, token->id);
+            printf("result[%i] = %c\n", i, token->id);
     }
     for (int i = 0; i < expr_result->size; i++)
     {
