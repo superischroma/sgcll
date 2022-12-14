@@ -201,21 +201,20 @@ static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
 static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
 {
     int src_size = src->size, dest_size = dest->size;
-    if (dest_size <= src_size)
-        return;
     bool src_float = isfloattype(src->type), dest_float = isfloattype(dest->type);
+    if (dest_size <= src_size && !src_float && !dest_float)
+        return;
+    if (dest_size == src_size && src_float && dest_float)
+        return;
     if (!src_float && !dest_float)
         emit("movsx %%%s, %%%s", find_register(REG_A, src_size), find_register(REG_A, dest_size));
     else if (!src_float && dest_float)
     {
         emit("pxor %%xmm0, %%xmm0");
-        emit("cvtsi2s%c%c %%%s, %%xmm0", floatsize(dest->size), int_reg_size(src->size), find_register(REG_A, src_size));
+        emit("cvtsi2s%c%c %%%s, %%xmm0", floatsize(dest->size), int_reg_size(max(src->size, 4)), find_register(REG_A, max(src_size, 4)));
     }
     else if (src_float && !dest_float)
-    {
-        emit("pxor %%xmm0, %%xmm0");
-        emit("cvts%c2si%c %%xmm0, %%%s", floatsize(src->size), int_reg_size(dest->size), find_register(REG_A, dest_size));
-    }
+        emit("cvts%c2si%c %%xmm0, %%%s", floatsize(src->size), int_reg_size(max(dest->size, 4)), find_register(REG_A, max(dest_size, 4)));
     else
         emit("cvts%c2s%c %%xmm0, %%xmm0", floatsize(src->size), floatsize(dest->size));
 }
@@ -252,12 +251,14 @@ static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
     emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, op->datatype);
     emitter_stash_int_reg(e, find_register(REG_A, op->datatype->size));
     emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, op->datatype);
     emit("%s%c %%%s, %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), find_register(REG_A, op->datatype->size));
 }
 
-static void emit_float_add_sub(emitter_t* e, ast_node_t* op)
+static void emit_float_add_sub_mul_div(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
     char* operation = NULL;
@@ -265,12 +266,16 @@ static void emit_float_add_sub(emitter_t* e, ast_node_t* op)
     {
         case OP_ADD: operation = "add"; break;
         case OP_SUB: operation = "sub"; break;
+        case OP_MUL: operation = "mul"; break;
+        case OP_DIV: operation = "div"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
     emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, op->datatype);
     emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), op->datatype->size);
     emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, op->datatype);
     char* restored = emitter_restore_float_reg(e, op->datatype->size);
     emit("%ss%c %%%s, %%%s", operation, floatsize(op->datatype->size), restored, find_register(REG_FLOAT, 8));
     free(restored);
@@ -281,7 +286,7 @@ static void emit_add_sub(emitter_t* e, ast_node_t* op)
     if (!isfloattype(op->datatype->type))
         emit_int_add_sub(e, op);
     else
-        emit_float_add_sub(e, op);
+        emit_float_add_sub_mul_div(e, op);
 }
 
 static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
@@ -299,18 +304,25 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
     }
     char* regA = find_register(REG_A, op->datatype->size);
     emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, op->datatype);
     emitter_stash_int_reg(e, regA);
     emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, op->datatype);
     emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size));
     if (op->type == OP_MOD)
         emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), find_register(REG_D, op->datatype->size), regA);
+}
+
+static void emit_float_mod(emitter_t* e, ast_node_t* op)
+{
 }
 
 static void emit_mul_div(emitter_t* e, ast_node_t* op)
 {
     if (!isfloattype(op->datatype->type))
         emit_int_mul_div(e, op);
-    /* float mul div here... */
+    else
+        emit_float_add_sub_mul_div(e, op);
 }
 
 static void emit_func_call(emitter_t* e, ast_node_t* call)
@@ -370,12 +382,21 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case AST_LVAR:
         {
-            emit("mov%c -%i(%%rbp), %%%s", int_reg_size(expr->datatype->size), expr->lvoffset, find_register(REG_A, expr->datatype->size));
+            if (isfloattype(expr->datatype->type))
+                emit("movs%c -%i(%%rbp), %%xmm0", floatsize(expr->datatype->size), expr->lvoffset);
+            else
+                emit("mov%c -%i(%%rbp), %%%s", int_reg_size(expr->datatype->size), expr->lvoffset, find_register(REG_A, expr->datatype->size));
             break;
         }
         case AST_FUNC_CALL:
         {
             emit_func_call(e, expr);
+            break;
+        }
+        case AST_CAST:
+        {
+            emit_expr(e, expr->castval);
+            emit_conv(e, expr->castval->datatype, expr->datatype);
             break;
         }
         default:

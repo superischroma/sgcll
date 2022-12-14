@@ -92,6 +92,7 @@ enum {
     AST_FLITERAL,
     AST_SLITERAL,
     AST_RETURN,
+    AST_CAST,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -241,6 +242,8 @@ typedef struct ast_node_t
         struct ast_node_t* retval;
         // AST_BLOCK
         vector_t* statements;
+        // AST_CAST
+        struct ast_node_t* castval;
     };
 } ast_node_t;
 
@@ -358,6 +361,7 @@ ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* l
 ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func, vector_t* args);
 ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel);
 ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval);
+ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval);
 void ast_print(ast_node_t* node);
 
 /* parser.c */

@@ -108,6 +108,13 @@ ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval)
     });
 }
 
+ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval)
+{
+    return ast_init(AST_CAST, dt, loc, &(ast_node_t){
+        .castval = castval
+    });
+}
+
 static void std_ast_print(ast_node_t* node, int indent)
 {
     indprintf(indent, "datatype: %i\n", node->datatype ? node->datatype->type : -1);
@@ -210,6 +217,10 @@ static void ast_print_recur(ast_node_t* node, int indent)
         }
         case OP_ASSIGN:
         case OP_ADD:
+        case OP_SUB:
+        case OP_MUL:
+        case OP_DIV:
+        case OP_MOD:
         {
             indprintf(indent, "AST_BINARY_OP (%c) {\n", node->type);
             indent++;
@@ -267,9 +278,24 @@ static void ast_print_recur(ast_node_t* node, int indent)
         {
             indprintf(indent, "AST_RETURN {\n");
             indent++;
+            std_ast_print(node, indent);
             indprintf(indent, "retval: {\n", node->fvalue);
             indent++;
             ast_print_recur(node->retval, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_CAST:
+        {
+            indprintf(indent, "AST_CAST {\n");
+            indent++;
+            std_ast_print(node, indent);
+            indprintf(indent, "castval: {\n", node->fvalue);
+            indent++;
+            ast_print_recur(node->castval, indent);
             indent--;
             indprintf(indent, "}\n");
             indent--;

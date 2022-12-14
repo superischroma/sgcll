@@ -105,22 +105,25 @@ datatype_t* get_arith_type(token_t* token)
 
 static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
 {
-    if (t2->size > t1->size)
+    if ((t2->size > t1->size && !isfloattype(t1->type)) || (t2->type == DTT_F32 && t1->type != DTT_F64))
     {
         datatype_t* tmp = t1;
         t1 = t2;
         t2 = tmp;
     }
-    if (isfloattype(t1->type))
-        return t1;
-    if (t1->size > t2->size)
-        return t1;
-    if (t1->usign == t2->usign)
-        return t1;
-    datatype_t* nt = calloc(1, sizeof(datatype_t));
-    *nt = *t1;
-    nt->usign = true;
-    return nt;
+    // integer promotion
+    if (t1->type == DTT_I16 || t1->type == DTT_I8)
+        t1 = t_i32;
+    if (t2->type == DTT_I16 || t2->type == DTT_I8)
+        t2 = t_i32;
+    if (t1->type == t2->type)
+    {
+        if (t1->usign)
+            return t1;
+        if (t2->usign)
+            return t2;
+    }
+    return t1;
 }
 
 char* make_label(parser_t* p)
@@ -571,10 +574,13 @@ static ast_node_t* parser_read_expr(parser_t* p)
             vector_t* args = vector_init(5, 5);
             for (int i = 0; i < node->params->size; i++)
             {
-                ast_node_t* arg = vector_pop(stack);
+                ast_node_t* arg = vector_pop(stack), * param = vector_get(node->params, i);
                 if (!arg)
                     errorp(token->loc->row, token->loc->col, "function %s expected %i parameters, got %i", node->func_name, node->params->size, i);
-                vector_push(args, arg);
+                if (arg->datatype->type == param->datatype->type)
+                    vector_push(args, arg);
+                else
+                    vector_push(args, ast_cast_init(param->datatype, arg->loc, arg));
             }
             vector_push(stack, ast_func_call_init(node->datatype, token->loc, node, args));
             break;
@@ -594,6 +600,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
                     ast_node_t* lhs = vector_pop(stack);
                     if (!lhs || !rhs)
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
+                    printf("new type: %i\n", arith_conv(lhs->datatype, rhs->datatype)->type);
                     vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
                     break;
                 }
