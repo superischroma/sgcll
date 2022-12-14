@@ -24,10 +24,31 @@ int __builtin_i32_dec_itos(int n, char* buffer)
     return i;
 }
 
+int __builtin_f32_dec_ftos(float f, char* buffer, int precision)
+{
+    int ipart = (int) f;
+    int i = __builtin_i32_dec_itos(ipart, buffer);
+    buffer[i++] = '.';
+    float dec = (f - ipart) * 10.0f;
+    for (int j = 0; j < precision; i++, j++, dec = (dec * 10.0f) - ((int) dec) * 10)
+        buffer[i] = (int) dec + '0';
+    buffer[i] = '\0';
+    return i;
+}
+
 void __builtin_i32_println(int i)
 {
     char buffer[34];
     int c = __builtin_i32_dec_itos(i, buffer);
+    buffer[c] = '\n';
+    buffer[c + 1] = '\0';
+    WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
+}
+
+void __builtin_f32_println(float f)
+{
+    char buffer[80];
+    int c = __builtin_f32_dec_ftos(f, buffer, 6);
     buffer[c] = '\n';
     buffer[c + 1] = '\0';
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);

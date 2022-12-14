@@ -78,6 +78,14 @@ ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue)
     });
 }
 
+ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel)
+{
+    return ast_init(AST_FLITERAL, dt, loc, &(ast_node_t){
+        .fvalue = fvalue,
+        .flabel = flabel
+    });
+}
+
 ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue)
 {
     return ast_init(AST_SLITERAL, dt, loc, &(ast_node_t){
@@ -90,6 +98,13 @@ ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* l
     return ast_init(type, dt, loc, &(ast_node_t){
         .lhs = lhs,
         .rhs = rhs
+    });
+}
+
+ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval)
+{
+    return ast_init(AST_RETURN, dt, loc, &(ast_node_t){
+        .retval = retval
     });
 }
 
@@ -234,6 +249,29 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indprintf(indent, "AST_ILITERAL {\n");
             indent++;
             indprintf(indent, "ivalue: %i\n", node->ivalue);
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_FLITERAL:
+        {
+            indprintf(indent, "AST_FLITERAL {\n");
+            indent++;
+            indprintf(indent, "fvalue: %f\n", node->fvalue);
+            indprintf(indent, "flabel: %s\n", node->flabel);
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_RETURN:
+        {
+            indprintf(indent, "AST_RETURN {\n");
+            indent++;
+            indprintf(indent, "retval: {\n", node->fvalue);
+            indent++;
+            ast_print_recur(node->retval, indent);
+            indent--;
+            indprintf(indent, "}\n");
             indent--;
             indprintf(indent, "}\n");
             break;

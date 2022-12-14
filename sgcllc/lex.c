@@ -8,7 +8,7 @@ lexer_t* lex_init(FILE* file)
 {
     lexer_t* lex = calloc(1, sizeof(lexer_t));
     lex->file = file;
-    lex->history = filehistory_init();
+    lex->peek = '\0';
     lex->row = 1;
     lex->col = 0;
     lex->offset = 0;
@@ -19,8 +19,11 @@ lexer_t* lex_init(FILE* file)
 static int lex_read(lexer_t* lex)
 {
     int c;
-    if (lex->history->size)
-        c = filehistory_serve(lex->history);
+    if (lex->peek)
+    {
+        c = lex->peek;
+        lex->peek = '\0';
+    }
     else
         c = fgetc(lex->file);
     if (c == '\n')
@@ -36,7 +39,7 @@ static int lex_read(lexer_t* lex)
 
 static int lex_peek(lexer_t* lex)
 {
-    return filehistory_enqueue(lex->history, fgetc(lex->file));
+    return lex->peek ? lex->peek : (lex->peek = fgetc(lex->file));
 }
 
 bool lex_eof(lexer_t* lex)
@@ -81,11 +84,48 @@ void lex_read_token(lexer_t* lex)
                 buffer_append(buffer, 'x');
                 lex_read(lex);
             }
-            for (;;)
+            for (int signature = 0;;)
             {
+                printf("current: %c\n", c);
                 int c = lex_peek(lex);
+                printf("next: %c\n", c);
                 if ((c < '0' || c > '9') && c != '.')
-                    break;
+                {
+                    if (c == 'f' ||
+                        c == 'F' ||
+                        c == 'd' ||
+                        c == 'D' ||
+                        c == 'l' ||
+                        c == 'L' ||
+                        c == 'u' ||
+                        c == 'U' ||
+                        c == 's' ||
+                        c == 'S' ||
+                        c == 'b' ||
+                        c == 'B')
+                    {
+                        signature++;
+                        buffer_append(buffer, (char) lex_read(lex));
+                        continue;
+                    }
+                    else
+                    {
+                        if (signature > 2)
+                            errorl(lex, "type signature for number literal cannot contain more than 2 characters");
+                        else if (signature == 2)
+                        {
+                            char first = buffer_get(buffer, buffer->size - 2);
+                            if (first != 'u' && first != 'U')
+                                errorl(lex, "the first type in 2-character type signature should be unsigned");
+                            char second = buffer_get(buffer, buffer->size - 1);
+                            if (second == 'u' || second == 'U')
+                                errorl(lex, "the second type in 2-character type signature cannot be unsigned, instead try: %c%c", second, first);
+                        }
+                        break;
+                    }
+                }
+                if (signature)
+                    errorl(lex, "number cannot continue after type signature");
                 buffer_append(buffer, (char) lex_read(lex));
             }
             buffer_append(buffer, '\0');
@@ -199,7 +239,6 @@ void lex_read_token(lexer_t* lex)
 void lex_delete(lexer_t* lex)
 {
     if (!lex) return;
-    filehistory_delete(lex->history);
     vector_delete(lex->output);
     free(lex);
 }

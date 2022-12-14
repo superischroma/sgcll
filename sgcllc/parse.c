@@ -18,7 +18,6 @@ static ast_node_t* parser_read_decl(parser_t* p);
 static ast_node_t* parser_read_lvar_decl(parser_t* p);
 static ast_node_t* parser_read_stmt(parser_t* p);
 static ast_node_t* parser_read_expr(parser_t* p);
-static void parser_define_builtins(parser_t* p);
 
 datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
 datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DTT_BOOL, 1, true };
@@ -33,6 +32,15 @@ datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, true };
 datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
 datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
 datatype_t* t_string = NULL;
+
+void set_up_builtins(void)
+{
+    builtins = map_init(NULL, 15);
+    map_put(builtins, "__builtin_i32_println", ast_builtin_init(t_void, "__builtin_i32_println",
+        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i"))));
+    map_put(builtins, "__builtin_f32_println", ast_builtin_init(t_void, "__builtin_f32_println",
+        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f"))));
+}
 
 datatype_t* get_t_string(void)
 {
@@ -58,6 +66,43 @@ int precedence(int op)
     return LOWEST_PRECEDENCE + 1;
 }
 
+datatype_t* make_unsign_type(datatype_t* dt)
+{
+    if (dt == t_i8) return t_ui8;
+    if (dt == t_i16) return t_ui16;
+    if (dt == t_i32) return t_ui32;
+    if (dt == t_i64) return t_ui64;
+    return dt;
+}
+
+datatype_t* get_arith_type(token_t* token)
+{
+    int len = strlen(token->content);
+    datatype_t* dt = t_i32;
+    bool usign = false, certainly_integral = false;
+    #define update(type) dt = (usign ? make_unsign_type(type) : type), certainly_integral = true
+    for (int i = len - 1; i >= 0; i--)
+    {
+        char c = token->content[i];
+        if (c == 'u' || c == 'U') usign = true, certainly_integral = true;
+        if (c == 'b' || c == 'B') update(t_i8);
+        if (c == 's' || c == 'S') update(t_i16);
+        if (c == 'l' || c == 'L') update(t_i64);
+        if (c == 'f' || c == 'F')
+        {
+            if (certainly_integral) errorp(token->loc->row, token->loc->col, "attempting to use floating point type signature on an integer literal");
+            dt = t_f32;
+        }
+        if (c == 'd' || c == 'D' || (c == '.' && !isfloattype(dt->type)))
+        {
+            if (certainly_integral) errorp(token->loc->row, token->loc->col, "attempting to use floating point type signature on an integer literal");
+            dt = t_f64;
+        }
+    }
+    #undef update
+    return dt;
+}
+
 static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
 {
     if (t2->size > t1->size)
@@ -78,6 +123,25 @@ static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
     return nt;
 }
 
+char* make_label(parser_t* p)
+{
+    buffer_t* namebuffer = buffer_init(4, 2);
+    buffer_append(namebuffer, '.');
+    buffer_append(namebuffer, 'L');
+    char idbuffer[33];
+    itos(p->labels->size, idbuffer);
+    for (int i = 0; i < 33; i++)
+    {
+        if (idbuffer[i] == '\0')
+            break;
+        buffer_append(namebuffer, idbuffer[i]);
+    }
+    buffer_append(namebuffer, '\0');
+    char* label = buffer_export(namebuffer);
+    buffer_delete(namebuffer);
+    return label;
+}
+
 parser_t* parser_init(lexer_t* lex)
 {
     parser_t* p = calloc(1, sizeof(parser_t));
@@ -86,17 +150,11 @@ parser_t* parser_init(lexer_t* lex)
     p->nfile = ast_file_init(loc);
     p->genv = map_init(NULL, 50);
     p->lenv = NULL;
+    p->labels = map_init(NULL, 20);
     p->lex = lex;
     p->oindex = 0;
     p->externs = vector_init(5, 5);
-    parser_define_builtins(p);
     return p;
-}
-
-static void parser_define_builtins(parser_t* p)
-{
-    vector_push(p->externs, map_put(p->genv, "__builtin_i32_println", ast_builtin_init(t_void, "__builtin_i32_println",
-        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i")))));
 }
 
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
@@ -113,7 +171,16 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
         case TT_CHAR_LITERAL:
             return ast_iliteral_init(t_i8, token->loc, atoll(token->content));
         case TT_NUMBER_LITERAL:
-            return ast_iliteral_init(t_i32, token->loc, atoll(token->content));
+        {
+            datatype_t* dt = get_arith_type(token);
+            if (isfloattype(dt->type))
+            {
+                char* label = make_label(p);
+                map_put(p->labels, label, token->content);
+                return ast_fliteral_init(dt, token->loc, atof(token->content), label);
+            }
+            return ast_iliteral_init(dt, token->loc, atoll(token->content));
+        }
         default:
             errorp(token->loc->row, token->loc->col, "unknown token");
     }
@@ -382,6 +449,10 @@ static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
         if (stmt->type == AST_LVAR)
             vector_push(func_node->local_variables, stmt);
         vector_push(func_node->body->statements, stmt);
+        if (parser_check(p, '}') && stmt->type != AST_RETURN) // no return statement
+            vector_push(func_node->body->statements, ast_return_init(stmt->datatype, stmt->loc, ast_iliteral_init(func_node->datatype, stmt->loc, 0)));
+        else if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
+            errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
     }
 }
 
@@ -430,6 +501,8 @@ static ast_node_t* parser_read_expr(parser_t* p)
             vector_push(expr_result, token);
         else if (token->type == TT_IDENTIFIER)
         {
+            ast_node_t* builtin = map_get(builtins, token->content);
+            if (builtin && !map_get(p->genv, token->content)) vector_push(p->externs, map_put(p->genv, token->content, builtin));
             ast_node_t* node = ast_get_by_token(p, token);
             if (node->type != AST_FUNC_DEFINITION)
                 vector_push(expr_result, token);

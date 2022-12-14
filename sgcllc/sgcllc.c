@@ -7,6 +7,7 @@
 #include "sgcllc.h"
 
 map_t* keywords;
+map_t* builtins;
 
 void set_up_keywords(void)
 {
@@ -35,6 +36,7 @@ int main(int argc, char** argv)
     if (argc != 2)
         errorc("only one file input is supported currently");
     set_up_keywords();
+    set_up_builtins();
     char* path = argv[1];
     int pathl = strlen(path);
     if (!chk_extension(path, pathl))

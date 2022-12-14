@@ -91,6 +91,7 @@ enum {
     AST_ILITERAL,
     AST_FLITERAL,
     AST_SLITERAL,
+    AST_RETURN,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -123,10 +124,10 @@ typedef struct
 typedef struct
 {
     FILE* file;
-    filehistory_t* history;
     int row;
     int col;
     int offset;
+    int peek;
     vector_t* output;
 } lexer_t;
 
@@ -258,6 +259,7 @@ typedef struct parser_t
     ast_node_t* nfile;
     map_t* genv;
     map_t* lenv;
+    map_t* labels;
     int oindex; // current index in the token stream
     vector_t* externs;
 } parser_t;
@@ -269,13 +271,13 @@ typedef struct emitter_t
     int stackoffset;
     int stackmax;
     int itmp;
+    int ftmp;
 } emitter_t;
 
 /* sgcllc.c */
 
 extern map_t* keywords;
-
-void set_up_keywords(void);
+extern map_t* builtins;
 
 /* lex.c */
 
@@ -298,6 +300,7 @@ buffer_t* buffer_init(int capacity, int alloc_delta);
 char buffer_append(buffer_t* buffer, char c);
 char* buffer_export(buffer_t* buffer);
 void buffer_delete(buffer_t* buffer);
+char buffer_get(buffer_t* buffer, int index);
 
 /* util.c */
 
@@ -306,6 +309,7 @@ bool token_has_content(token_t* token);
 char* unwrap_string_literal(char* slit);
 void indprintf(int indent, const char* fmt, ...);
 bool isfloattype(datatype_type dtt);
+int itos(int n, char* buffer);
 
 /* token.c */
 
@@ -352,6 +356,8 @@ ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue)
 ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue);
 ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* lhs, ast_node_t* rhs);
 ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func, vector_t* args);
+ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel);
+ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval);
 void ast_print(ast_node_t* node);
 
 /* parser.c */
@@ -360,6 +366,7 @@ parser_t* parser_init(lexer_t* lex);
 bool parser_eof(parser_t* p);
 token_t* parser_read(parser_t* p);
 void parser_delete(parser_t* p);
+void set_up_builtins(void);
 
 /* emitter.c */
 

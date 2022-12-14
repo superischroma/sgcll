@@ -28,6 +28,13 @@ char* buffer_export(buffer_t* buffer)
     return export;
 }
 
+char buffer_get(buffer_t* buffer, int index)
+{
+    if (index < 0 || index >= buffer->size)
+        return '\0';
+    return buffer->data[index];
+}
+
 void buffer_delete(buffer_t* buffer)
 {
     free(buffer->data);

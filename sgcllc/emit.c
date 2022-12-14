@@ -14,6 +14,8 @@ const char tmpreg[] = "bot012345"; // temporary registers: b, src, dest, 10, 11,
 #define emit(...) emitf(e, "\t" __VA_ARGS__)
 #define emit_noindent(...) emitf(e, __VA_ARGS__)
 
+#define floatsize(i) (i == 4 ? 's' : 'd')
+
 static void emit_file(emitter_t* e, ast_node_t* file);
 static void emit_gvar_decl(emitter_t* e, ast_node_t* gvar);
 static void emit_func_definition(emitter_t* e, ast_node_t* func_definition);
@@ -89,6 +91,7 @@ emitter_t* emitter_init(parser_t* p, FILE* out)
     e->p = p;
     e->out = out;
     e->itmp = 0;
+    e->ftmp = 1;
     e->stackmax = 0;
     return e;
 }
@@ -106,11 +109,32 @@ static char* emitter_restore_int_reg(emitter_t* e, int size)
     return find_register(tmpreg[--e->itmp], size);
 }
 
+static void emitter_stash_float_reg(emitter_t* e, char* reg, int size)
+{
+    if (e->ftmp >= 16)
+        errore(0, 0, "tell dev to add float stack pushing lol");
+    emit("movs%c %%%s, %%xmm%i", floatsize(size), reg, e->ftmp++);
+}
+
+static char* emitter_restore_float_reg(emitter_t* e, int size)
+{
+    char* name = malloc(6);
+    name[0] = 'x';
+    name[1] = name[2] = 'm';
+    itos(--e->ftmp, name + 3);
+    return name;
+}
+
 static void emit_file(emitter_t* e, ast_node_t* file)
 {
     for (int i = 0; i < e->p->externs->size; i++)
         emit(".extern %s", ((ast_node_t*) vector_get(e->p->externs, i))->func_name);
     emit(".global main");
+    for (int i = 0; i < file->imports->size; i++)
+    {
+        ast_node_t* node = (ast_node_t*) vector_get(file->imports, i);
+        errore(node->loc->row, node->loc->col, "import statements have not been implemented yet");
+    }
     for (int i = 0; i < file->decls->size; i++)
     {
         ast_node_t* node = (ast_node_t*) vector_get(file->decls, i);
@@ -119,10 +143,29 @@ static void emit_file(emitter_t* e, ast_node_t* file)
         else if (node->type == AST_FUNC_DEFINITION)
             emit_func_definition(e, node);
     }
-    for (int i = 0; i < file->imports->size; i++)
+    for (int i = 0; i < e->p->labels->capacity; i++)
     {
-        ast_node_t* node = (ast_node_t*) vector_get(file->imports, i);
-        errore(node->loc->row, node->loc->col, "import statements have not been implemented yet");
+        char* key = e->p->labels->key[i];
+        char* value = e->p->labels->value[i];
+        if (key == NULL)
+            continue;
+        int valuelen = strlen(value);
+        char* lastchar = &(value[valuelen - 1]);
+        emit_noindent("%s:", key);
+        if (value[0] == '"')
+            emit(".ascii %s", value);
+        else if (*lastchar == 'f' || *lastchar == 'F')
+        {
+            *lastchar = '\0';
+            emit(".single %s", value);
+            *lastchar = 'f';
+        }
+        else
+        {
+            if (*lastchar == 'd' || *lastchar == 'D') *lastchar = '\0';
+            emit(".double %s", value);
+            if (*lastchar == '\0') *lastchar = 'd';
+        }
     }
 }
 
@@ -155,6 +198,28 @@ static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
     lvar->lvoffset = (e->stackoffset += lvar->datatype->size);
 }
 
+static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
+{
+    int src_size = src->size, dest_size = dest->size;
+    if (dest_size <= src_size)
+        return;
+    bool src_float = isfloattype(src->type), dest_float = isfloattype(dest->type);
+    if (!src_float && !dest_float)
+        emit("movsx %%%s, %%%s", find_register(REG_A, src_size), find_register(REG_A, dest_size));
+    else if (!src_float && dest_float)
+    {
+        emit("pxor %%xmm0, %%xmm0");
+        emit("cvtsi2s%c%c %%%s, %%xmm0", floatsize(dest->size), int_reg_size(src->size), find_register(REG_A, src_size));
+    }
+    else if (src_float && !dest_float)
+    {
+        emit("pxor %%xmm0, %%xmm0");
+        emit("cvts%c2si%c %%xmm0, %%%s", floatsize(src->size), int_reg_size(dest->size), find_register(REG_A, dest_size));
+    }
+    else
+        emit("cvts%c2s%c %%xmm0, %%xmm0", floatsize(src->size), floatsize(dest->size));
+}
+
 static void emit_assign(emitter_t* e, ast_node_t* op)
 {
     switch (op->lhs->type)
@@ -162,8 +227,12 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
         case AST_LVAR:
         {
             emit_expr(e, op->rhs);
-            char* reg = find_register(REG_A, op->lhs->datatype->size);
-            emit("mov%c %%%s, -%i(%%rbp)", int_reg_size(op->lhs->datatype->size), reg, op->lhs->lvoffset);
+            if (op->lhs->datatype != op->rhs->datatype)
+                emit_conv(e, op->rhs->datatype, op->lhs->datatype);
+            if (isfloattype(op->lhs->datatype->type))
+                emit("movs%c %%xmm0, -%i(%%rbp)", floatsize(op->lhs->datatype->size), op->lhs->lvoffset);
+            else
+                emit("mov%c %%%s, -%i(%%rbp)", int_reg_size(op->lhs->datatype->size), find_register(REG_A, op->lhs->datatype->size), op->lhs->lvoffset);
             break;
         }
         default:
@@ -188,11 +257,31 @@ static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
     emit("%s%c %%%s, %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), find_register(REG_A, op->datatype->size));
 }
 
+static void emit_float_add_sub(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* operation = NULL;
+    switch (op->type)
+    {
+        case OP_ADD: operation = "add"; break;
+        case OP_SUB: operation = "sub"; break;
+        default:
+            errore(op->loc->row, op->loc->col, "unknown operation");
+    }
+    emit_expr(e, rhs);
+    emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), op->datatype->size);
+    emit_expr(e, lhs);
+    char* restored = emitter_restore_float_reg(e, op->datatype->size);
+    emit("%ss%c %%%s, %%%s", operation, floatsize(op->datatype->size), restored, find_register(REG_FLOAT, 8));
+    free(restored);
+}
+
 static void emit_add_sub(emitter_t* e, ast_node_t* op)
 {
     if (!isfloattype(op->datatype->type))
         emit_int_add_sub(e, op);
-    /* float add sub here... */
+    else
+        emit_float_add_sub(e, op);
 }
 
 static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
@@ -226,7 +315,7 @@ static void emit_mul_div(emitter_t* e, ast_node_t* op)
 
 static void emit_func_call(emitter_t* e, ast_node_t* call)
 {
-    for (int i = call->args->size - 1; i >= 0; i--)
+    for (int i = call->args->size - 1, j = 0; i >= 0; i--)
     {
         ast_node_t* arg = vector_get(call->args, i);
         if (i >= 4)
@@ -234,7 +323,14 @@ static void emit_func_call(emitter_t* e, ast_node_t* call)
         else
         {
             emit_expr(e, arg);
-            emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->type), find_register(x64cc[i], arg->datatype->type));
+            if (isfloattype(arg->datatype->type))
+            {
+                if (j != 0)
+                    emit("movs%c %%xmm0, %%xmm%i", floatsize(arg->datatype->size), j);
+            }
+            else
+                emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->type), find_register(x64cc[i], arg->datatype->type));
+            j++;
         }
     }
     emit("call %s", call->func->func_name); // todo: handle xmm0 return values
@@ -267,6 +363,11 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit("mov%c $%i, %%%s", int_reg_size(expr->datatype->size), expr->ivalue, find_register(REG_A, expr->datatype->size));
             break;
         }
+        case AST_FLITERAL:
+        {
+            emit("movs%c %s(%%rip), %%xmm0", floatsize(expr->datatype->size), expr->flabel);
+            break;
+        }
         case AST_LVAR:
         {
             emit("mov%c -%i(%%rbp), %%%s", int_reg_size(expr->datatype->size), expr->lvoffset, find_register(REG_A, expr->datatype->size));
@@ -289,6 +390,11 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt)
         case AST_LVAR:
         {
             emit_lvar_decl(e, stmt);
+            break;
+        }
+        case AST_RETURN:
+        {
+            emit_expr(e, stmt->retval);
             break;
         }
         default:
