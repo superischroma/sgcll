@@ -595,6 +595,11 @@ static ast_node_t* parser_read_expr(parser_t* p)
                 case OP_MUL:
                 case OP_DIV:
                 case OP_MOD:
+                case OP_ASSIGN_ADD:
+                case OP_ASSIGN_SUB:
+                case OP_ASSIGN_MUL:
+                case OP_ASSIGN_DIV:
+                case OP_ASSIGN_MOD:
                 {
                     ast_node_t* rhs = vector_pop(stack);
                     ast_node_t* lhs = vector_pop(stack);

@@ -184,6 +184,17 @@ void lex_read_token(lexer_t* lex)
         case OP_MUL:
         case OP_MOD:
         {
+            if (lex_peek(lex) == '=')
+            {
+                switch (c)
+                {
+                    case OP_ADD: c = OP_ASSIGN_ADD; break;
+                    case OP_SUB: c = OP_ASSIGN_SUB; break;
+                    case OP_MUL: c = OP_ASSIGN_MUL; break;
+                    case OP_MOD: c = OP_ASSIGN_MOD; break;
+                }
+                lex_read(lex);
+            }
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }
@@ -219,6 +230,11 @@ void lex_read_token(lexer_t* lex)
                     }
                 }
                 break;
+            }
+            if (lex_peek(lex) == '=')
+            {
+                c = OP_ASSIGN_DIV;
+                lex_read(lex);
             }
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
         }

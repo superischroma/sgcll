@@ -225,9 +225,6 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
     {
         case AST_LVAR:
         {
-            emit_expr(e, op->rhs);
-            if (op->lhs->datatype != op->rhs->datatype)
-                emit_conv(e, op->rhs->datatype, op->lhs->datatype);
             if (isfloattype(op->lhs->datatype->type))
                 emit("movs%c %%xmm0, -%i(%%rbp)", floatsize(op->lhs->datatype->size), op->lhs->lvoffset);
             else
@@ -245,8 +242,8 @@ static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
     char* operation = NULL;
     switch (op->type)
     {
-        case OP_ADD: operation = "add"; break;
-        case OP_SUB: operation = "sub"; break;
+        case OP_ADD: case OP_ASSIGN_ADD: operation = "add"; break;
+        case OP_SUB: case OP_ASSIGN_SUB: operation = "sub"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
@@ -264,10 +261,10 @@ static void emit_float_add_sub_mul_div(emitter_t* e, ast_node_t* op)
     char* operation = NULL;
     switch (op->type)
     {
-        case OP_ADD: operation = "add"; break;
-        case OP_SUB: operation = "sub"; break;
-        case OP_MUL: operation = "mul"; break;
-        case OP_DIV: operation = "div"; break;
+        case OP_ADD: case OP_ASSIGN_ADD: operation = "add"; break;
+        case OP_SUB: case OP_ASSIGN_SUB: operation = "sub"; break;
+        case OP_MUL: case OP_ASSIGN_MUL: operation = "mul"; break;
+        case OP_DIV: case OP_ASSIGN_DIV: operation = "div"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
@@ -295,9 +292,11 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
     char* operation = NULL;
     switch (op->type)
     {
-        case OP_MUL: operation = "imul"; break;
+        case OP_MUL: case OP_ASSIGN_MUL: operation = "imul"; break;
         case OP_DIV:
+        case OP_ASSIGN_DIV: 
         case OP_MOD:
+        case OP_ASSIGN_MOD:
             operation = "idiv"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
@@ -309,7 +308,7 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
     emit_expr(e, lhs);
     emit_conv(e, lhs->datatype, op->datatype);
     emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size));
-    if (op->type == OP_MOD)
+    if (op->type == OP_MOD || op->type == OP_ASSIGN_MOD)
         emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), find_register(REG_D, op->datatype->size), regA);
 }
 
@@ -354,6 +353,9 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
     {
         case OP_ASSIGN:
         {
+            emit_expr(e, expr->rhs);
+            if (expr->lhs->datatype != expr->rhs->datatype)
+                emit_conv(e, expr->rhs->datatype, expr->lhs->datatype);
             emit_assign(e, expr);
             break;
         }
@@ -368,6 +370,25 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         case OP_MOD:
         {
             emit_mul_div(e, expr);
+            break;
+        }
+        case OP_ASSIGN_ADD:
+        case OP_ASSIGN_SUB:
+        {
+            emit_add_sub(e, expr);
+            if (expr->lhs->datatype != expr->rhs->datatype)
+                emit_conv(e, expr->rhs->datatype, expr->lhs->datatype);
+            emit_assign(e, expr);
+            break;
+        }
+        case OP_ASSIGN_MUL:
+        case OP_ASSIGN_DIV:
+        case OP_ASSIGN_MOD:
+        {
+            emit_mul_div(e, expr);
+            if (expr->lhs->datatype != expr->rhs->datatype)
+                emit_conv(e, expr->rhs->datatype, expr->lhs->datatype);
+            emit_assign(e, expr);
             break;
         }
         case AST_ILITERAL:

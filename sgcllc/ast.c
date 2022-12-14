@@ -221,8 +221,13 @@ static void ast_print_recur(ast_node_t* node, int indent)
         case OP_MUL:
         case OP_DIV:
         case OP_MOD:
+        case OP_ASSIGN_ADD:
+        case OP_ASSIGN_SUB:
+        case OP_ASSIGN_MUL:
+        case OP_ASSIGN_DIV:
+        case OP_ASSIGN_MOD:
         {
-            indprintf(indent, "AST_BINARY_OP (%c) {\n", node->type);
+            indprintf(indent, "AST_BINARY_OP (%c/%i) {\n", node->type, node->type);
             indent++;
             std_ast_print(node, indent);
             indprintf(indent, "lhs: {\n");

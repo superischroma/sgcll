@@ -51,7 +51,7 @@ int main(int argc, char** argv)
         if (token_has_content(token))
             printf("%s ", token->content);
         else
-            printf("%c ", token->id);
+            printf("%i ", token->id);
     }
     parser_t* parser = parser_init(lexer);
     while (!parser_eof(parser))

@@ -17,3 +17,10 @@ keyword(KW_PRIVATE, "private", 0b10)
 keyword(KW_PUBLIC, "public", 0b10)
 keyword(KW_PROTECTED, "protected", 0b10)
 keyword(KW_UNSIGNED, "unsigned", 0b10)
+
+// operators
+keyword(OP_ASSIGN_ADD, "+=", 0b00)
+keyword(OP_ASSIGN_SUB, "-=", 0b00)
+keyword(OP_ASSIGN_MUL, "*=", 0b00)
+keyword(OP_ASSIGN_DIV, "/=", 0b00)
+keyword(OP_ASSIGN_MOD, "%=", 0b00)
