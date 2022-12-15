@@ -102,6 +102,7 @@ float __builtin_ss_fmod(float x,  float y)
 
 void __builtin_init()
 {
+    int i = 0;
     __asm__("stmxcsr -4(%rbp)\n"
 	    "andl $0xF3FF, -4(%rbp)\n"
 	    "orl $0x6000, -4(%rbp)\n"
