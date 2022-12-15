@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <io.h>
 
 #include "sgcllc.h"
 
@@ -154,6 +155,7 @@ parser_t* parser_init(lexer_t* lex)
     p->oindex = 0;
     p->userexterns = vector_init(5, 5);
     p->cexterns = vector_init(5, 5);
+    p->links = vector_init(5, 5);
     vector_push(p->cexterns, ast_builtin_init(t_void, "__builtin_init",
         vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA)));
     return p;
@@ -415,6 +417,24 @@ static ast_node_t* parser_read_import(parser_t* p)
     token_t* path = parser_expect_type(p, TT_STRING_LITERAL);
     ast_node_t* node = ast_import_init(path->loc, unwrap_string_literal(path->content));
     parser_expect(p, ';');
+    char* filepath = malloc(256);
+    sprintf(filepath, "libsgcll/%s.o", node->path);
+    vector_push(p->links, filepath);
+    char* headerpath = malloc(256);
+    sprintf(headerpath, "libsgcll/%s.sgcllh", node->path);
+    FILE* header = fopen(headerpath, "rb");
+    vector_t* symbols = read_header(header);
+    for (int i = 0; i < symbols->size; i++)
+    {
+        ast_node_t* node = vector_get(symbols, i);
+        char* name;
+        if (node->type == AST_FUNC_DEFINITION)
+            name = node->func_name;
+        else if (node->type == AST_GVAR)
+            name = node->var_name;
+        map_put(p->genv, name, vector_push(p->userexterns, node));
+    }
+    vector_delete(symbols);
     return node;
 }
 

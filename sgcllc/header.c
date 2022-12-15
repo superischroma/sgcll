@@ -35,7 +35,7 @@ void writetype(FILE* out, ast_node_t* node)
 char impl_read(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file");
+        errorc("corrupted header file: %i", __LINE__);
     char c;
     fread(&c, sizeof(char), 1, in);
     return c;
@@ -44,7 +44,7 @@ char impl_read(FILE* in)
 short impl_readi16(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file");
+        errorc("corrupted header file: %i", __LINE__);
     short s;
     fread(&s, sizeof(short), 1, in);
     return s;
@@ -53,12 +53,12 @@ short impl_readi16(FILE* in)
 char* impl_readstr(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file");
+        errorc("corrupted header file: %i", __LINE__);
     buffer_t* buffer = buffer_init(1024, 64);
-    for (char c = read; c; c = read)
+    for (char c = fgetc(in); c; c = fgetc(in))
     {
         buffer_append(buffer, c);
-        if (feof(in)) errorc("corrupted header file");
+        if (feof(in)) errorc("corrupted header file: %i", __LINE__);
     }
     buffer_append(buffer, '\0');
     return buffer_export(buffer);
@@ -110,7 +110,9 @@ vector_t* read_header(FILE* in)
         if (type_storage == 0x00) \
             dt->type = dtt; \
         else \
-            errorc("objects don't exist"); \
+        { \
+            errorc("objects don't exist, errored on: %i", type_storage); \
+        } \
         switch (dt->type) \
         { \
             case DTT_VOID: dt->size = 0; break; \
@@ -129,9 +131,11 @@ vector_t* read_header(FILE* in)
                 break; \
         }
     vector_t* vec = vector_init(5, 5);
-    while (!feof(in))
+    for (;;)
     {
-        ast_node_type decl_type = read;
+        ast_node_type decl_type = fgetc(in);
+        if (decl_type == EOF)
+            break;
         char type_storage = read;
         char dtt, * nametype;
         if (type_storage == 0x00)
@@ -150,7 +154,6 @@ vector_t* read_header(FILE* in)
             short param_count = readi16;
             for (int i = 0; i < param_count; i++)
             {
-                ast_node_type decl_type = read;
                 char type_storage = read;
                 char dtt, * nametype;
                 if (type_storage == 0x00)

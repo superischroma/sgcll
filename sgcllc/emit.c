@@ -134,11 +134,13 @@ static void emit_file(emitter_t* e, ast_node_t* file)
         emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_name);
     if (e->control)
         emit(".global main");
+    /*
     for (int i = 0; i < file->imports->size; i++)
     {
         ast_node_t* node = (ast_node_t*) vector_get(file->imports, i);
         errore(node->loc->row, node->loc->col, "import statements have not been implemented yet");
     }
+    */
     for (int i = 0; i < file->decls->size; i++)
     {
         ast_node_t* node = (ast_node_t*) vector_get(file->decls, i);

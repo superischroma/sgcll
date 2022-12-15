@@ -60,3 +60,13 @@ int itos(int n, char* buffer)
     }
     return i;
 }
+
+void systemf(const char* fmt, ...)
+{
+    char buffer[strlen(fmt) + 512];
+    va_list args;
+    va_start(args, fmt);
+    vsprintf(buffer, fmt, args);
+    va_end(args);
+    system(buffer);
+}

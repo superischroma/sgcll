@@ -252,6 +252,7 @@ typedef struct parser_t
     int oindex; // current index in the token stream
     vector_t* userexterns;
     vector_t* cexterns;
+    vector_t* links;
 } parser_t;
 
 typedef struct emitter_t
@@ -269,6 +270,8 @@ typedef struct emitter_t
 
 extern map_t* keywords;
 extern map_t* builtins;
+
+vector_t* build(char* path);
 
 /* lex.c */
 
@@ -294,6 +297,7 @@ char* unwrap_string_literal(char* slit);
 void indprintf(int indent, const char* fmt, ...);
 bool isfloattype(datatype_type dtt);
 int itos(int n, char* buffer);
+void systemf(const char* fmt, ...);
 
 /* token.c */
 

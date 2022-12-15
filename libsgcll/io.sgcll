@@ -1,1 +1,6 @@
-public lower void print(string str);
+//public lower void print(string str);
+
+public void print(string str)
+{
+    __builtin_string_println(str);
+}

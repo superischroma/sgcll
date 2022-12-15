@@ -31,7 +31,7 @@ bool chk_extension(char* path, int len)
     return true;
 }
 
-void build(char* path)
+vector_t* build(char* path)
 {
     int pathl = strlen(path);
     if (!chk_extension(path, pathl))
@@ -68,11 +68,12 @@ void build(char* path)
     emitter_emit(emitter);
     emitter_delete(emitter);
     fclose(out);
-    parser_delete(parser);
     lex_delete(lexer);
     fclose(file);
     free(assembly);
-    return;
+    vector_t* links = parser->links;
+    parser_delete(parser);
+    return links;
 }
 
 int main(int argc, char** argv)
@@ -86,9 +87,16 @@ int main(int argc, char** argv)
     char* assembly = calloc(pathl + 1, sizeof(char));
     strcpy(assembly, path);
     assembly[pathl - 4] = '\0';
+    vector_t* links = build(path);
     char link[1024];
     sprintf(link, "gcc -o a.exe %s builtin/builtin.o", assembly);
-    build(path);
+    char extralink[256];
+    for (int i = 0; i < links->size; i++)
+    {
+        sprintf(extralink, " %s", vector_get(links, i));
+        strcat(link, extralink);
+    }
+    printf("linker: %s", link);
     system(link);
     free(assembly);
 }
