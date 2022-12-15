@@ -85,7 +85,7 @@ void emitf(emitter_t* e, const char* fmt, ...)
     fprintf(e->out, "\n");
 }
 
-emitter_t* emitter_init(parser_t* p, FILE* out)
+emitter_t* emitter_init(parser_t* p, FILE* out, bool control)
 {
     emitter_t* e = calloc(1, sizeof(emitter_t));
     e->p = p;
@@ -93,6 +93,7 @@ emitter_t* emitter_init(parser_t* p, FILE* out)
     e->itmp = 0;
     e->ftmp = 1;
     e->stackmax = 0;
+    e->control = control;
     return e;
 }
 
@@ -127,9 +128,12 @@ static char* emitter_restore_float_reg(emitter_t* e, int size)
 
 static void emit_file(emitter_t* e, ast_node_t* file)
 {
-    for (int i = 0; i < e->p->externs->size; i++)
-        emit(".extern %s", ((ast_node_t*) vector_get(e->p->externs, i))->func_name);
-    emit(".global main");
+    for (int i = 0; i < e->p->userexterns->size; i++)
+        emit(".extern %s", ((ast_node_t*) vector_get(e->p->userexterns, i))->func_name);
+    for (int i = 0; i < e->p->cexterns->size; i++)
+        emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_name);
+    if (e->control)
+        emit(".global main");
     for (int i = 0; i < file->imports->size; i++)
     {
         ast_node_t* node = (ast_node_t*) vector_get(file->imports, i);
@@ -153,7 +157,7 @@ static void emit_file(emitter_t* e, ast_node_t* file)
         char* lastchar = &(value[valuelen - 1]);
         emit_noindent("%s:", key);
         if (value[0] == '"')
-            emit(".ascii %s", value);
+            emit(".string %s", value);
         else if (*lastchar == 'f' || *lastchar == 'F')
         {
             *lastchar = '\0';
@@ -184,8 +188,13 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition)
     for (int i = 0; i < min(func_definition->params->size, 4); i++)
     {
         ast_node_t* param = (ast_node_t*) vector_get(func_definition->params, i);
-        emit("mov%c %%%s, %i(%%rbp)", int_reg_size(param->datatype->size), find_register(x64cc[i], param->datatype->size), 16 + (i * 8));
+        if (isfloattype(param->datatype->type))
+            emit("movs%c %%xmm%i, %i(%%rbp)", floatsize(param->datatype->size), i, 16 + (i * 8));
+        else
+            emit("mov%c %%%s, %i(%%rbp)", int_reg_size(param->datatype->size), find_register(x64cc[i], param->datatype->size), 16 + (i * 8));
     }
+    if (!strcmp(func_definition->func_name, "main"))
+        emit("call __builtin_init");
     for (int i = 0; i < func_definition->body->statements->size; i++)
         emit_stmt(e, vector_get(func_definition->body->statements, i));
     emit("addq $%i, %%rsp", stackalloc);
@@ -195,7 +204,7 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition)
 
 static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
 {
-    lvar->lvoffset = (e->stackoffset += lvar->datatype->size);
+    lvar->lvoffset = -(e->stackoffset += lvar->datatype->size);
 }
 
 static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
@@ -219,16 +228,27 @@ static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
         emit("cvts%c2s%c %%xmm0, %%xmm0", floatsize(src->size), floatsize(dest->size));
 }
 
+static bool chk_type_mismatch(datatype_t* lhs, datatype_t* rhs)
+{
+    if ((lhs->type == DTT_STRING && rhs->type != DTT_STRING) || (lhs->type != DTT_STRING && rhs->type == DTT_STRING))
+        return true;
+    return false;
+}
+
 static void emit_assign(emitter_t* e, ast_node_t* op)
 {
     switch (op->lhs->type)
     {
         case AST_LVAR:
         {
-            if (isfloattype(op->lhs->datatype->type))
-                emit("movs%c %%xmm0, -%i(%%rbp)", floatsize(op->lhs->datatype->size), op->lhs->lvoffset);
+            if (chk_type_mismatch(op->lhs->datatype, op->rhs->datatype))
+                errore(op->loc->row, op->loc->col, "type '%i' cannot be assigned to '%i'", op->rhs->datatype->type, op->lhs->datatype->type);
+            if (op->lhs->datatype->type == DTT_STRING)
+                emit("movq %%rax, %i(%%rbp)", op->lhs->lvoffset);
+            else if (isfloattype(op->lhs->datatype->type))
+                emit("movs%c %%xmm0, %i(%%rbp)", floatsize(op->lhs->datatype->size), op->lhs->lvoffset);
             else
-                emit("mov%c %%%s, -%i(%%rbp)", int_reg_size(op->lhs->datatype->size), find_register(REG_A, op->lhs->datatype->size), op->lhs->lvoffset);
+                emit("mov%c %%%s, %i(%%rbp)", int_reg_size(op->lhs->datatype->size), find_register(REG_A, op->lhs->datatype->size), op->lhs->lvoffset);
             break;
         }
         default:
@@ -302,14 +322,16 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
     char* regA = find_register(REG_A, op->datatype->size);
+    char* regD = find_register(REG_D, op->datatype->size);
     emit_expr(e, rhs);
     emit_conv(e, rhs->datatype, op->datatype);
     emitter_stash_int_reg(e, regA);
     emit_expr(e, lhs);
     emit_conv(e, lhs->datatype, op->datatype);
+    emit("xor%c %%%s, %%%s", int_reg_size(op->datatype->size), regD, regD);
     emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size));
     if (op->type == OP_MOD || op->type == OP_ASSIGN_MOD)
-        emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), find_register(REG_D, op->datatype->size), regA);
+        emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), regD, regA);
 }
 
 static void emit_float_mod(emitter_t* e, ast_node_t* op)
@@ -326,25 +348,28 @@ static void emit_mul_div(emitter_t* e, ast_node_t* op)
 
 static void emit_func_call(emitter_t* e, ast_node_t* call)
 {
-    for (int i = call->args->size - 1, j = 0; i >= 0; i--)
+    for (int i = call->args->size - 1; i >= 0; i--)
     {
         ast_node_t* arg = vector_get(call->args, i);
         if (i >= 4)
             errore(call->loc->row, call->loc->col, "function calls with 4+ arguments are not supported yet");
         else
         {
+            if (arg->type == AST_FLITERAL)
+                printf("what: %f (%s, %i)\n", arg->fvalue, arg->flabel, i);
             emit_expr(e, arg);
-            if (isfloattype(arg->datatype->type))
+            if (arg->datatype->type == DTT_STRING)
+                emit("movq %%rax, %%%s", find_register(x64cc[i], 8));
+            else if (isfloattype(arg->datatype->type))
             {
-                if (j != 0)
-                    emit("movs%c %%xmm0, %%xmm%i", floatsize(arg->datatype->size), j);
+                if (i)
+                    emit("movs%c %%xmm0, %%xmm%i", floatsize(arg->datatype->size), i);
             }
             else
                 emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->type), find_register(x64cc[i], arg->datatype->type));
-            j++;
         }
     }
-    emit("call %s", call->func->func_name); // todo: handle xmm0 return values
+    emit("call %s", call->func->func_name);
 }
 
 static void emit_expr(emitter_t* e, ast_node_t* expr)
@@ -401,12 +426,17 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit("movs%c %s(%%rip), %%xmm0", floatsize(expr->datatype->size), expr->flabel);
             break;
         }
+        case AST_SLITERAL:
+        {
+            emit("leaq %s(%%rip), %%rax", expr->slabel);
+            break;
+        }
         case AST_LVAR:
         {
             if (isfloattype(expr->datatype->type))
-                emit("movs%c -%i(%%rbp), %%xmm0", floatsize(expr->datatype->size), expr->lvoffset);
+                emit("movs%c %i(%%rbp), %%xmm0", floatsize(expr->datatype->size), expr->lvoffset);
             else
-                emit("mov%c -%i(%%rbp), %%%s", int_reg_size(expr->datatype->size), expr->lvoffset, find_register(REG_A, expr->datatype->size));
+                emit("mov%c %i(%%rbp), %%%s", int_reg_size(expr->datatype->size), expr->lvoffset, find_register(REG_A, expr->datatype->size));
             break;
         }
         case AST_FUNC_CALL:

@@ -1,1 +1,1 @@
-public lower print(i8 c);
+public lower void print(string str);

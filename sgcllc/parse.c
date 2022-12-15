@@ -16,7 +16,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p);
 static void parser_read_func_body(parser_t* p, ast_node_t* func_node);
 static ast_node_t* parser_read_decl(parser_t* p);
 static ast_node_t* parser_read_lvar_decl(parser_t* p);
-static ast_node_t* parser_read_stmt(parser_t* p);
+static ast_node_t* parser_read_stmt(parser_t* p, ast_node_t* func_node);
 static ast_node_t* parser_read_expr(parser_t* p);
 
 datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
@@ -31,7 +31,7 @@ datatype_t* t_ui32 = &(datatype_t){ VT_PUBLIC, DTT_I32, 4, true };
 datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, true };
 datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
 datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
-datatype_t* t_string = NULL;
+datatype_t* t_string = &(datatype_t){ VT_PUBLIC, DTT_STRING, 8, false };
 
 void set_up_builtins(void)
 {
@@ -40,12 +40,8 @@ void set_up_builtins(void)
         vector_qinit(1, ast_lvar_init(t_i32, NULL, "i"))));
     map_put(builtins, "__builtin_f32_println", ast_builtin_init(t_void, "__builtin_f32_println",
         vector_qinit(1, ast_lvar_init(t_f32, NULL, "f"))));
-}
-
-datatype_t* get_t_string(void)
-{
-    if (t_string) return t_string;
-    return t_string = &(datatype_t){ VT_PUBLIC, DTT_STRING, 8, false, t_i8 };
+    map_put(builtins, "__builtin_string_println", ast_builtin_init(t_void, "__builtin_string_println",
+        vector_qinit(1, ast_lvar_init(t_string, NULL, "str"))));
 }
 
 int precedence(int op)
@@ -156,8 +152,16 @@ parser_t* parser_init(lexer_t* lex)
     p->labels = map_init(NULL, 20);
     p->lex = lex;
     p->oindex = 0;
-    p->externs = vector_init(5, 5);
+    p->userexterns = vector_init(5, 5);
+    p->cexterns = vector_init(5, 5);
+    vector_push(p->cexterns, ast_builtin_init(t_void, "__builtin_init",
+        vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA)));
     return p;
+}
+
+void parser_make_header(parser_t* p, FILE* out)
+{
+    write_header(out, p->genv);
 }
 
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
@@ -183,6 +187,12 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
                 return ast_fliteral_init(dt, token->loc, atof(token->content), label);
             }
             return ast_iliteral_init(dt, token->loc, atoll(token->content));
+        }
+        case TT_STRING_LITERAL:
+        {
+            char* label = make_label(p);
+            map_put(p->labels, label, token->content);
+            return ast_sliteral_init(t_string, token->loc, token->content, label);
         }
         default:
             errorp(token->loc->row, token->loc->col, "unknown token");
@@ -375,6 +385,7 @@ static datatype_t* parser_build_datatype(parser_t* p)
                 case DTT_I16: dt->size = 2; break;
                 case DTT_I32:
                 case DTT_F32:
+                case DTT_LET:
                     dt->size = 4;
                     break;
                 default:
@@ -414,7 +425,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
     ast_node_t* func_node = map_put(p->lenv ? p->lenv : p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
     parser_expect(p, '(');
     map_t* func_env = p->lenv = map_init(p->lenv ? p->lenv : p->genv, 100);
-    for (;;)
+    for (int i = 16;; i += 8)
     {
         if (parser_check(p, ')'))
         {
@@ -428,6 +439,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
         ast_node_t* lvar = map_put(p->lenv, param_name_token->content, ast_lvar_init(pdt, param_name_token->loc, param_name_token->content));
+        lvar->lvoffset = i;
         vector_push(func_node->params, lvar);
     }
     parser_expect(p, '{');
@@ -448,11 +460,11 @@ static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
             parser_get(p);
             break;
         }
-        ast_node_t* stmt = parser_read_stmt(p);
+        ast_node_t* stmt = parser_read_stmt(p, func_node);
         if (stmt->type == AST_LVAR)
             vector_push(func_node->local_variables, stmt);
         vector_push(func_node->body->statements, stmt);
-        if (parser_check(p, '}') && stmt->type != AST_RETURN) // no return statement
+        if (parser_check(p, '}') && stmt->type != AST_RETURN && func_node->datatype->type != DTT_VOID) // no return statement
             vector_push(func_node->body->statements, ast_return_init(stmt->datatype, stmt->loc, ast_iliteral_init(func_node->datatype, stmt->loc, 0)));
         else if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
             errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
@@ -480,10 +492,27 @@ static ast_node_t* parser_read_lvar_decl(parser_t* p)
     return var_node;
 }
 
-static ast_node_t* parser_read_stmt(parser_t* p)
+static bool parser_is_return_statement(parser_t* p)
+{
+    token_t* token = parser_peek(p);
+    if (token == NULL)
+        return false;
+    return token->id == KW_RETURN;
+}
+
+static ast_node_t* parser_read_return_statement(parser_t* p, ast_node_t* func_node)
+{
+    parser_expect(p, KW_RETURN);
+    ast_node_t* expr = parser_read_expr(p);
+    return ast_return_init(func_node->datatype, expr->loc, expr->datatype != func_node->datatype ? ast_cast_init(func_node->datatype, expr->loc, expr) : expr);
+}
+
+static ast_node_t* parser_read_stmt(parser_t* p, ast_node_t* func_node)
 {
     if (parser_is_var_decl(p))
         return parser_read_lvar_decl(p);
+    if (parser_is_return_statement(p))
+        return parser_read_return_statement(p, func_node);
     return parser_read_expr(p);
 }
 
@@ -505,7 +534,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
         else if (token->type == TT_IDENTIFIER)
         {
             ast_node_t* builtin = map_get(builtins, token->content);
-            if (builtin && !map_get(p->genv, token->content)) vector_push(p->externs, map_put(p->genv, token->content, builtin));
+            if (builtin && !map_get(p->genv, token->content)) vector_push(p->userexterns, map_put(p->genv, token->content, builtin));
             ast_node_t* node = ast_get_by_token(p, token);
             if (node->type != AST_FUNC_DEFINITION)
                 vector_push(expr_result, token);
@@ -571,19 +600,20 @@ static ast_node_t* parser_read_expr(parser_t* p)
                 vector_push(stack, node);
                 continue;
             }
-            vector_t* args = vector_init(5, 5);
+            vector_t* args = vector_init(node->params->size, 1);
+            args->size = node->params->size;
             for (int i = 0; i < node->params->size; i++)
             {
                 ast_node_t* arg = vector_pop(stack), * param = vector_get(node->params, i);
                 if (!arg)
                     errorp(token->loc->row, token->loc->col, "function %s expected %i parameters, got %i", node->func_name, node->params->size, i);
                 if (arg->datatype->type == param->datatype->type)
-                    vector_push(args, arg);
+                    args->data[node->params->size - 1 - i] = arg;
                 else
-                    vector_push(args, ast_cast_init(param->datatype, arg->loc, arg));
+                    args->data[node->params->size - 1 - i] = ast_cast_init(param->datatype, arg->loc, arg);
             }
             vector_push(stack, ast_func_call_init(node->datatype, token->loc, node, args));
-            break;
+            continue;
         }
         if (token->type == TT_KEYWORD)
         {
@@ -605,7 +635,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
                     ast_node_t* lhs = vector_pop(stack);
                     if (!lhs || !rhs)
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
-                    printf("new type: %i\n", arith_conv(lhs->datatype, rhs->datatype)->type);
+                    if (lhs->datatype->type == DTT_LET) lhs->datatype = rhs->datatype;
                     vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
                     break;
                 }
@@ -642,6 +672,7 @@ void parser_delete(parser_t* p)
     if (!p) return;
     map_delete(p->genv);
     map_delete(p->lenv);
-    vector_delete(p->externs);
+    vector_delete(p->userexterns);
+    vector_delete(p->cexterns);
     free(p);
 }

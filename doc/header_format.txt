@@ -1,0 +1,20 @@
+[1 byte decl type; 00 - gvar, 01 - func definition]
+[1 byte type storage; 00 - id, 01 - name]
+if type storage = id:
+    [1 byte id of type]
+else:
+    [null terminated string]
+[1 byte visibility]
+[1 byte signedness; 00 - signed, 01 - unsigned]
+[null terminated string of the identifier's name]
+if decl type = func definition:
+    [2 byte parameter count]
+    [for each parameter in array]:
+        [1 byte type storage; 00 - id, 01 - name]
+        if type storage = id:
+            [2 byte id corresponding to a keyword in the compiler]
+        else:
+            [null terminated string]
+        [1 byte visibility]
+        [1 byte signedness; 00 - signed, 01 - unsigned]
+        [null terminated string of the identifier's name]

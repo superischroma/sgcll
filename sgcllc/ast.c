@@ -39,6 +39,7 @@ ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func
 {
     return ast_init(AST_FUNC_DEFINITION, dt, loc, &(ast_node_t){
         .func_name = func_name,
+        .extrn = false,
         .params = vector_init(10, 3),
         .local_variables = vector_init(10, 5),
         .body = ast_block_init(loc)
@@ -57,6 +58,7 @@ ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params)
 {
     return ast_init(AST_FUNC_DEFINITION, dt, NULL, &(ast_node_t){
         .func_name = func_name,
+        .extrn = true,
         .params = params,
         .local_variables = NULL,
         .body = NULL
@@ -86,10 +88,11 @@ ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, ch
     });
 }
 
-ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue)
+ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue, char* slabel)
 {
     return ast_init(AST_SLITERAL, dt, loc, &(ast_node_t){
-        .svalue = svalue
+        .svalue = svalue,
+        .slabel = slabel
     });
 }
 
@@ -275,6 +278,16 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indent++;
             indprintf(indent, "fvalue: %f\n", node->fvalue);
             indprintf(indent, "flabel: %s\n", node->flabel);
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_SLITERAL:
+        {
+            indprintf(indent, "AST_SLITERAL {\n");
+            indent++;
+            indprintf(indent, "svalue: %s\n", node->svalue);
+            indprintf(indent, "slabel: %s\n", node->slabel);
             indent--;
             indprintf(indent, "}\n");
             break;

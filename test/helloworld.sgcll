@@ -1,0 +1,5 @@
+// scuffed hello world tbh
+i32 main()
+{
+    __builtin_string_println("Hello world!");
+}

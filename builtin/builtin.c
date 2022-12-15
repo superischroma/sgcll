@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #define __builtin_abs(x) ((x) < 0 ? -(x) : (x))
+#define __builtin_fmod(x, y) (x - y * (int) (x / y))
 
 int __builtin_i32_dec_itos(int n, char* buffer)
 {
@@ -36,6 +37,13 @@ int __builtin_f32_dec_ftos(float f, char* buffer, int precision)
     return i;
 }
 
+int __builtin_string_length(char* str)
+{
+    int i = 0;
+    for (; str[i]; i++);
+    return i;
+}
+
 void __builtin_i32_println(int i)
 {
     char buffer[34];
@@ -52,4 +60,50 @@ void __builtin_f32_println(float f)
     buffer[c] = '\n';
     buffer[c + 1] = '\0';
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
+}
+
+void __builtin_string_println(char* str)
+{
+    WriteFile(GetStdHandle((DWORD) -11), str, __builtin_string_length(str), 0, NULL);
+    WriteFile(GetStdHandle((DWORD) -11), "\n", 1, 0, NULL);
+}
+
+/*
+void* __builtin_malloc(unsigned long long size)
+{
+    return HeapAlloc(GetProcessHeap(), 0, size);
+}
+
+void __builtin_free(void* data)
+{
+    HeapFree(GetProcessHeap(), 0, data);
+}
+*/
+
+double __builtin_dd_fmod(double x, double y)
+{
+    return __builtin_fmod(x, y);
+}
+
+double __builtin_ds_fmod(double x, float y)
+{
+    return __builtin_fmod(x, y);
+}
+
+double __builtin_sd_fmod(float x, double y)
+{
+    return __builtin_fmod(x, y);
+}
+
+float __builtin_ss_fmod(float x,  float y)
+{
+    return __builtin_fmod(x, y);
+}
+
+void __builtin_init()
+{
+    __asm__("stmxcsr -4(%rbp)\n"
+	    "andl $0xF3FF, -4(%rbp)\n"
+	    "orl $0x6000, -4(%rbp)\n"
+	    "ldmxcsr -4(%rbp)\n");
 }

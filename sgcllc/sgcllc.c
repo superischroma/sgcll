@@ -31,13 +31,8 @@ bool chk_extension(char* path, int len)
     return true;
 }
 
-int main(int argc, char** argv)
+void build(char* path)
 {
-    if (argc != 2)
-        errorc("only one file input is supported currently");
-    set_up_keywords();
-    set_up_builtins();
-    char* path = argv[1];
     int pathl = strlen(path);
     if (!chk_extension(path, pathl))
         errorc("input file does not have extension .sgcll");
@@ -57,19 +52,43 @@ int main(int argc, char** argv)
     while (!parser_eof(parser))
         parser_read(parser);
     ast_print(parser->nfile);
-    char* assembly = calloc(pathl, sizeof(char));
+    char* header = calloc(pathl + 2, sizeof(char));
+    strcpy(header, path);
+    header[pathl] = 'h';
+    header[pathl + 1] = '\0';
+    FILE* hout = fopen(header, "wb");
+    parser_make_header(parser, hout);
+    fclose(hout);
+    free(header);
+    char* assembly = calloc(pathl + 1, sizeof(char));
     strcpy(assembly, path);
     assembly[pathl - 4] = '\0';
     FILE* out = fopen(assembly, "w");
-    emitter_t* emitter = emitter_init(parser, out);
+    emitter_t* emitter = emitter_init(parser, out, true);
     emitter_emit(emitter);
     emitter_delete(emitter);
     fclose(out);
     parser_delete(parser);
     lex_delete(lexer);
     fclose(file);
+    free(assembly);
+    return;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc != 2)
+        errorc("only one file input is supported currently");
+    set_up_keywords();
+    set_up_builtins();
+    char* path = argv[1];
+    int pathl = strlen(path);
+    char* assembly = calloc(pathl + 1, sizeof(char));
+    strcpy(assembly, path);
+    assembly[pathl - 4] = '\0';
     char link[1024];
     sprintf(link, "gcc -o a.exe %s builtin/builtin.o", assembly);
+    build(path);
     system(link);
     free(assembly);
 }

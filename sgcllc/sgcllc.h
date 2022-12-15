@@ -28,10 +28,8 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define DTT_I64 5
 #define DTT_F32 6
 #define DTT_F64 7
-#define DTT_ARRAY 8
-#define DTT_PTR 9
-#define DTT_FUNCTION 10
-#define DTT_STRING 11
+#define DTT_LET 8
+#define DTT_STRING 9
 
 /* Visibility Type */
 
@@ -100,20 +98,6 @@ enum {
 
 /* Structs */
 
-typedef struct filehistory_element_t
-{
-    int c;
-    struct filehistory_element_t* behind;
-    struct filehistory_element_t* ahead;
-} filehistory_element_t;
-
-typedef struct
-{
-    filehistory_element_t* front;
-    filehistory_element_t* back;
-    int size;
-} filehistory_t;
-
 typedef struct
 {
     void** data;
@@ -168,6 +152,7 @@ typedef struct datatype_t
     int length; // array
     struct datatype_t* ret_type; // function
     vector_t* parameters;
+    char* name;
 } datatype_t;
 
 typedef struct ast_node_t
@@ -215,6 +200,7 @@ typedef struct ast_node_t
             char* func_name;
             vector_t* params;
             vector_t* local_variables;
+            bool extrn;
             struct ast_node_t* body;
         };
         // AST_FUNC_CALL
@@ -264,7 +250,8 @@ typedef struct parser_t
     map_t* lenv;
     map_t* labels;
     int oindex; // current index in the token stream
-    vector_t* externs;
+    vector_t* userexterns;
+    vector_t* cexterns;
 } parser_t;
 
 typedef struct emitter_t
@@ -275,6 +262,7 @@ typedef struct emitter_t
     int stackmax;
     int itmp;
     int ftmp;
+    bool control;
 } emitter_t;
 
 /* sgcllc.c */
@@ -289,13 +277,6 @@ bool lex_eof(lexer_t* lex);
 void lex_read_token(lexer_t* lex);
 void lex_delete(lexer_t* lex);
 token_t* lex_get(lexer_t* lex, int index);
-
-/* filehistory.c */
-
-filehistory_t* filehistory_init();
-int filehistory_enqueue(filehistory_t* fs, int c);
-int filehistory_serve(filehistory_t* fs);
-void filehistory_delete(filehistory_t* fs);
 
 /* buffer.c */
 
@@ -356,7 +337,7 @@ ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func
 ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params);
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name);
 ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue);
-ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue);
+ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue, char* slabel);
 ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* lhs, ast_node_t* rhs);
 ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func, vector_t* args);
 ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel);
@@ -367,6 +348,7 @@ void ast_print(ast_node_t* node);
 /* parser.c */
 
 parser_t* parser_init(lexer_t* lex);
+void parser_make_header(parser_t* p, FILE* out);
 bool parser_eof(parser_t* p);
 token_t* parser_read(parser_t* p);
 void parser_delete(parser_t* p);
@@ -374,8 +356,13 @@ void set_up_builtins(void);
 
 /* emitter.c */
 
-emitter_t* emitter_init(parser_t* p, FILE* out);
+emitter_t* emitter_init(parser_t* p, FILE* out, bool control);
 void emitter_emit(emitter_t* e);
 emitter_t* emitter_delete(emitter_t* e);
+
+/* header.c */
+
+void write_header(FILE* out, map_t* genv);
+vector_t* read_header(FILE* in);
 
 #endif
