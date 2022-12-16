@@ -1,0 +1,9 @@
+print_prod(a, b)
+{
+    __builtin_i32_println(a * b);
+}
+
+i32 main()
+{
+    print_prod(5, 3);
+}

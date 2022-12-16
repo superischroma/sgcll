@@ -11,7 +11,7 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
 int parser_get_datatype_type(parser_t* p);
 static bool parser_is_func_definition(parser_t* p);
 static bool parser_is_var_decl(parser_t* p);
-static datatype_t* parser_build_datatype(parser_t* p);
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt);
 static ast_node_t* parser_read_import(parser_t* p);
 static ast_node_t* parser_read_func_definition(parser_t* p);
 static void parser_read_func_body(parser_t* p, ast_node_t* func_node);
@@ -359,12 +359,12 @@ static bool parser_is_var_decl(parser_t* p)
     return true;
 }
 
-static datatype_t* parser_build_datatype(parser_t* p)
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt)
 {
     datatype_t* dt = calloc(1, sizeof(datatype_t));
     dt->visibility = VT_PRIVATE;
     dt->usign = false;
-    dt->type = DTT_I32;
+    dt->type = unspecified_dtt;
     dt->size = 4;
     for (;; parser_get(p))
     {
@@ -440,7 +440,7 @@ static ast_node_t* parser_read_import(parser_t* p)
 
 static ast_node_t* parser_read_func_definition(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p);
+    datatype_t* dt = parser_build_datatype(p, DTT_VOID);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* func_node = map_put(p->lenv ? p->lenv : p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
     parser_expect(p, '(');
@@ -454,7 +454,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         }
         if (parser_check(p, ','))
             parser_get(p);
-        datatype_t* pdt = parser_build_datatype(p);
+        datatype_t* pdt = parser_build_datatype(p, DTT_I32);
         token_t* param_name_token = parser_expect_type(p, TT_IDENTIFIER);
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
@@ -500,7 +500,7 @@ static ast_node_t* parser_read_decl(parser_t* p)
 
 static ast_node_t* parser_read_lvar_decl(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p);
+    datatype_t* dt = parser_build_datatype(p, DTT_I32);
     token_t* var_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* var_node = map_put(p->lenv ? p->lenv : p->genv, var_name_token->content, ast_lvar_init(dt, var_name_token->loc, var_name_token->content));
     if (parser_check(p, OP_ASSIGN))

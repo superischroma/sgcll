@@ -132,8 +132,28 @@ static void emit_file(emitter_t* e, ast_node_t* file)
         emit(".extern %s", ((ast_node_t*) vector_get(e->p->userexterns, i))->func_name);
     for (int i = 0; i < e->p->cexterns->size; i++)
         emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_name);
-    if (e->control)
+    if (map_get(e->p->genv, "main"))
         emit(".global main");
+    else
+    {
+        char* global_func = NULL;
+        for (int i = 0; i < e->p->genv->capacity; i++)
+        {
+            if (e->p->genv->key[i] != NULL)
+            {
+                ast_node_t* node = e->p->genv->value[i];
+                if (node->type != AST_FUNC_DEFINITION)
+                    continue;
+                if (node->extrn)
+                    continue;
+                global_func = node->func_name;
+                break;
+            }
+        }
+        if (!global_func)
+            errore(0, 0, "no entry point present");
+        emit(".global %s", global_func);
+    }
     /*
     for (int i = 0; i < file->imports->size; i++)
     {
