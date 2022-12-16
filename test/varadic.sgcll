@@ -1,0 +1,9 @@
+i32 sum(i32... values)
+{
+    i32 sum = 0;
+    for (i32 i = 0; i < #values; i++)
+    {
+        sum += values[i];
+    }
+    return sum;
+}

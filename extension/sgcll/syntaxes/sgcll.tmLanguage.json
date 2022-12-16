@@ -49,7 +49,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.sgcll",
-				"match": "\\b(import|return)\\b"
+				"match": "\\b(import|namespace|return|for|while)\\b"
 			},
 			{
 				"name": "constant.language.sgcll",

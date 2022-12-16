@@ -1,3 +1,5 @@
+namespace io;
+
 //public lower print(string str);
 
 public print(string str)
