@@ -1,0 +1,11 @@
+import "io";
+
+i32 main()
+{
+    i32 i = 0;
+    if (i)
+        print("i is not equal to 0");
+    else
+        print("i is equal to 0");
+    print("this runs regardless");
+}

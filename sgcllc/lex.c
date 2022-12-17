@@ -170,12 +170,21 @@ void lex_read_token(lexer_t* lex)
         }
         case KW_LPAREN:
         case KW_RPAREN:
-        case KW_LBRACE:
         case KW_RBRACE:
+        case KW_LBRACK:
+        case KW_RBRACK:
         case KW_SEMICOLON:
         case KW_COMMA:
         case OP_ASSIGN:
         {
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
+            break;
+        }
+        case KW_LBRACE:
+        {
+            token_t* prev = vector_top(lex->output);
+            if (prev != NULL && token_has_content(prev))
+                c = OP_MAKE_SIZE;
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }

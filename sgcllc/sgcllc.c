@@ -44,9 +44,9 @@ vector_t* build(char* path)
     {
         token_t* token = vector_get(lexer->output, i);
         if (token_has_content(token))
-            printf("%s ", token->content);
+            printf("%s\n", token->content);
         else
-            printf("%i ", token->id);
+            printf("%c (id: %i)\n", token->id, token->id);
     }
     parser_t* parser = parser_init(lexer);
     while (!parser_eof(parser))

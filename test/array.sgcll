@@ -1,0 +1,5 @@
+i32 main()
+{
+    i32[][] nums = make i32[5][8];
+    delete nums;
+}

@@ -26,6 +26,18 @@ token_t* id_token_init(token_type type, int id, int offset, int row, int col)
     return token;
 }
 
+token_t* datatype_token_init(token_type type, datatype_t* dt, int offset, int row, int col)
+{
+    token_t* token = calloc(1, sizeof(token_t));
+    token->type = type;
+    token->dt = dt;
+    token->loc = calloc(1, sizeof(location_t));
+    token->loc->offset = offset;
+    token->loc->row = row;
+    token->loc->col = col;
+    return token;
+}
+
 void token_delete(token_t* token)
 {
     free(token->loc);

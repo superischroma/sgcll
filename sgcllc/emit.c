@@ -173,7 +173,7 @@ static void emit_file(emitter_t* e, ast_node_t* file)
     {
         char* key = e->p->labels->key[i];
         char* value = e->p->labels->value[i];
-        if (key == NULL)
+        if (key == NULL || value == NULL)
             continue;
         int valuelen = strlen(value);
         char* lastchar = &(value[valuelen - 1]);
@@ -276,6 +276,25 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
         default:
             errore(op->loc->row, op->loc->col, "assignment operator cannot be applied to left side of this expression");
     }
+}
+
+static void emit_make(emitter_t* e, ast_node_t* make)
+{
+    datatype_t* dt = make->datatype;
+    emit("movl $%i, %%edx", dt->depth);
+    datatype_t* current = dt;
+    for (int i = 0; i < dt->depth; i++, current = current->array_type)
+    {
+        emit_expr(e, current->length);
+        if (i >= 2)
+            emit("mov%c %%%s, %i(%%rsp)", int_reg_size(current->length->datatype->size),
+                find_register(REG_A, current->length->datatype->type), 32 + 8 * (i - 2));
+        else
+            emit("mov%c %%%s, %%%s", int_reg_size(current->length->datatype->size),
+                find_register(REG_A, current->length->datatype->type), find_register(x64cc[i + 2], current->length->datatype->type));
+    }
+    emit("movl $%i, %%ecx", current->size);
+    emit("call __builtin_dynamic_ndim_array");
 }
 
 static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
@@ -394,6 +413,77 @@ static void emit_func_call(emitter_t* e, ast_node_t* call)
     emit("call %s", call->func->func_name);
 }
 
+static void emit_if_statement(emitter_t* e, ast_node_t* stmt)
+{
+    emit_expr(e, stmt->if_cond);
+    emit("cmp%c $0, %%%s", int_reg_size(stmt->if_cond->datatype->size), find_register(REG_A, stmt->if_cond->datatype->type));
+    char* skip = make_label(e->p, NULL);
+    emit("je %s", skip);
+    for (int i = 0; i < stmt->if_then->statements->size; i++)
+        emit_stmt(e, vector_get(stmt->if_then->statements, i));
+    bool els_exists = stmt->if_els->statements->size;
+    if (els_exists)
+    {
+        char* skip_els = make_label(e->p, NULL);
+        emit("jmp %s", skip_els);
+        emit_noindent("%s:", skip);
+        for (int i = 0; i < stmt->if_els->statements->size; i++)
+            emit_stmt(e, vector_get(stmt->if_els->statements, i));
+        emit_noindent("%s:", skip_els);
+    }
+    else
+        emit_noindent("%s:", skip);
+}
+
+static void emit_while_statement(emitter_t* e, ast_node_t* stmt)
+{
+    char* check_cond = make_label(e->p, NULL);
+    emit("jmp %s", check_cond);
+    char* loop = make_label(e->p, NULL);
+    emit_noindent("%s:", loop);
+    for (int i = 0; i < stmt->while_then->statements->size; i++)
+        emit_stmt(e, vector_get(stmt->while_then->statements, i));
+    emit_noindent("%s:", check_cond);
+    emit_expr(e, stmt->while_cond);
+    emit("cmp%c $0, %%%s", int_reg_size(stmt->while_cond->datatype->size), find_register(REG_A, stmt->while_cond->datatype->type));
+    emit("jne %s", loop);
+}
+
+static void emit_delete_statement(emitter_t* e, ast_node_t* stmt)
+{
+    switch (stmt->delsym->type)
+    {
+        case AST_LVAR:
+        {
+            if (stmt->delsym->datatype->type == DTT_ARRAY)
+            {
+                emit("movq %i(%%rbp), %%rcx", stmt->delsym->lvoffset);
+                emit("movl $%i, %%edx", stmt->delsym->datatype->depth);
+                datatype_t* current = stmt->delsym->datatype;
+                for (int i = 0; i < stmt->delsym->datatype->depth; i++, current = current->array_type)
+                {
+                    emit_expr(e, current->length);
+                    if (i >= 2)
+                        emit("mov%c %%%s, %i(%%rsp)", int_reg_size(current->length->datatype->size),
+                            find_register(REG_A, current->length->datatype->type), 32 + 8 * (i - 2));
+                    else
+                        emit("mov%c %%%s, %%%s", int_reg_size(current->length->datatype->size),
+                            find_register(REG_A, current->length->datatype->type), find_register(x64cc[i + 2], current->length->datatype->type));
+                }
+                emit("call __builtin_delete_array");
+            }
+            else
+                errore(stmt->loc->row, stmt->loc->col, "delete operator cannot be applied here");
+            break;
+        }
+        default:
+        {
+            errore(stmt->loc->row, stmt->loc->col, "delete operator cannot be applied here");
+            break;
+        }
+    }
+}
+
 static void emit_expr(emitter_t* e, ast_node_t* expr)
 {
     switch (expr->type)
@@ -472,6 +562,11 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit_conv(e, expr->castval->datatype, expr->datatype);
             break;
         }
+        case AST_MAKE:
+        {
+            emit_make(e, expr);
+            break;
+        }
         default:
             errore(expr->loc->row, expr->loc->col, "unable to emit expressions of type %i at this time", expr->type);
     }
@@ -489,6 +584,21 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt)
         case AST_RETURN:
         {
             emit_expr(e, stmt->retval);
+            break;
+        }
+        case AST_IF:
+        {
+            emit_if_statement(e, stmt);
+            break;
+        }
+        case AST_WHILE:
+        {
+            emit_while_statement(e, stmt);
+            break;
+        }
+        case AST_DELETE:
+        {
+            emit_delete_statement(e, stmt);
             break;
         }
         default:

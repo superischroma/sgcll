@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "sgcllc.h"
 
@@ -69,6 +70,14 @@ void vector_clear(vector_t* vec, int capacity)
     if (capacity >= 0)
         vec->data = realloc(vec->data, sizeof(void*) * (vec->capacity = capacity));
     vec->size = 0;
+}
+
+void vector_concat(vector_t* vec, vector_t* other)
+{
+    if (vec->size + other->size >= vec->capacity)
+        vec->data = realloc(vec->data, sizeof(void*) * (vec->capacity = vec->size + other->size));
+    memcpy(vec->data + vec->size, other->data, other->size);
+    vec->size = vec->size + other->size;
 }
 
 void vector_delete(vector_t* vec)

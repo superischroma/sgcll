@@ -5,20 +5,22 @@
 
 #include "sgcllc.h"
 
-#define LOWEST_PRECEDENCE 4
+#define LOWEST_PRECEDENCE 6
+#define NO_TERMINATOR -2
     
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
 int parser_get_datatype_type(parser_t* p);
 static bool parser_is_func_definition(parser_t* p);
 static bool parser_is_var_decl(parser_t* p);
-static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt);
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator);
 static ast_node_t* parser_read_import(parser_t* p);
 static ast_node_t* parser_read_func_definition(parser_t* p);
-static void parser_read_func_body(parser_t* p, ast_node_t* func_node);
+static void parser_read_func_body(parser_t* p);
 static ast_node_t* parser_read_decl(parser_t* p);
 static ast_node_t* parser_read_lvar_decl(parser_t* p);
-static ast_node_t* parser_read_stmt(parser_t* p, ast_node_t* func_node);
-static ast_node_t* parser_read_expr(parser_t* p);
+static ast_node_t* parser_read_stmt(parser_t* p);
+static ast_node_t* parser_read_expr(parser_t* p, char terminator);
+static void parser_read_body(parser_t* p, ast_node_t* body);
 
 datatype_t* t_void = &(datatype_t){ VT_PUBLIC, DTT_VOID, 0, false };
 datatype_t* t_bool = &(datatype_t){ VT_PUBLIC, DTT_BOOL, 1, true };
@@ -33,6 +35,7 @@ datatype_t* t_ui64 = &(datatype_t){ VT_PUBLIC, DTT_I64, 8, true };
 datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
 datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
 datatype_t* t_string = &(datatype_t){ VT_PUBLIC, DTT_STRING, 8, false };
+datatype_t* t_array = &(datatype_t){ VT_PUBLIC, DTT_ARRAY, 8, false };
 
 void set_up_builtins(void)
 {
@@ -49,18 +52,23 @@ int precedence(int op)
 {
     switch (op)
     {
-        case KW_COMMA: return LOWEST_PRECEDENCE;
+        case KW_COMMA:
+            return 7;
         case OP_ASSIGN:
-            return LOWEST_PRECEDENCE - 1;
+            return 6;
+        case KW_LBRACK:
+            return 5;
+        case OP_MAKE:
+            return 4;
         case OP_ADD:
         case OP_SUB:
-            return LOWEST_PRECEDENCE - 2;
+            return 3;
         case OP_MUL:
         case OP_DIV:
         case OP_MOD:
-            return LOWEST_PRECEDENCE - 3;
+            return 2;
     }
-    return LOWEST_PRECEDENCE + 1;
+    return 8;
 }
 
 datatype_t* make_unsign_type(datatype_t* dt)
@@ -123,7 +131,7 @@ static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
     return t1;
 }
 
-char* make_label(parser_t* p)
+char* make_label(parser_t* p, void* content)
 {
     buffer_t* namebuffer = buffer_init(4, 2);
     buffer_append(namebuffer, '.');
@@ -139,6 +147,7 @@ char* make_label(parser_t* p)
     buffer_append(namebuffer, '\0');
     char* label = buffer_export(namebuffer);
     buffer_delete(namebuffer);
+    map_put(p->labels, label, content);
     return label;
 }
 
@@ -166,6 +175,18 @@ void parser_make_header(parser_t* p, FILE* out)
     write_header(out, p->genv);
 }
 
+// vector is deleted by function if already exists
+static void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vector_t* args)
+{
+    ast_node_t* extrn = map_get(p->lenv ? p->lenv : p->genv, name);
+    if (extrn)
+    {
+        vector_delete(args);
+        return;
+    }
+    map_put(p->genv, name, vector_push(p->cexterns, ast_builtin_init(dt, name, args)));
+}
+
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
 {
     switch (token->type)
@@ -184,16 +205,14 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
             datatype_t* dt = get_arith_type(token);
             if (isfloattype(dt->type))
             {
-                char* label = make_label(p);
-                map_put(p->labels, label, token->content);
+                char* label = make_label(p, token->content);
                 return ast_fliteral_init(dt, token->loc, atof(token->content), label);
             }
             return ast_iliteral_init(dt, token->loc, atoll(token->content));
         }
         case TT_STRING_LITERAL:
         {
-            char* label = make_label(p);
-            map_put(p->labels, label, token->content);
+            char* label = make_label(p, token->content);
             return ast_sliteral_init(t_string, token->loc, token->content, label);
         }
         default:
@@ -359,7 +378,92 @@ static bool parser_is_var_decl(parser_t* p)
     return true;
 }
 
-static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt)
+static bool parser_is_if_statement(parser_t* p)
+{
+    if (!parser_check(p, KW_IF))
+        return false;
+    int i = 2;
+    token_t* token = parser_far_peek(p, i);
+    if (token->id != KW_LPAREN)
+        return false;
+    for (i++;; i++)
+    {
+        token_t* token = parser_far_peek(p, i);
+        if (token == NULL)
+            return false;
+        if (token->id == KW_RPAREN)
+            break;
+    }
+    return true;
+}
+
+static ast_node_t* parser_read_if_statement(parser_t* p)
+{
+    token_t* if_keyword = parser_expect(p, KW_IF);
+    parser_expect(p, '(');
+    ast_node_t* condition = parser_read_expr(p, ')');
+    parser_expect(p, ')');
+    ast_node_t* if_stmt = ast_if_init(p->current_func->datatype, if_keyword->loc,
+        isfloattype(condition->datatype->type) ? ast_cast_init(t_i64, condition->loc, condition) : condition);
+    if (parser_check(p, '{'))
+    {
+        parser_get(p);
+        parser_read_body(p, if_stmt->if_then);
+    }
+    else
+        vector_push(if_stmt->if_then->statements, parser_read_stmt(p));
+    if (parser_check(p, KW_ELSE))
+    {
+        parser_get(p);
+        if (parser_check(p, '{'))
+        {
+            parser_get(p);
+            parser_read_body(p, if_stmt->if_els);
+        }
+        else
+            vector_push(if_stmt->if_els->statements, parser_read_stmt(p));
+    }
+    return if_stmt;
+}
+
+static bool parser_is_while_statement(parser_t* p)
+{
+    if (!parser_check(p, KW_WHILE))
+        return false;
+    int i = 2;
+    token_t* token = parser_far_peek(p, i);
+    if (token->id != KW_LPAREN)
+        return false;
+    for (i++;; i++)
+    {
+        token_t* token = parser_far_peek(p, i);
+        if (token == NULL)
+            return false;
+        if (token->id == KW_RPAREN)
+            break;
+    }
+    return true;
+}
+
+static ast_node_t* parser_read_while_statement(parser_t* p)
+{
+    token_t* while_keyword = parser_expect(p, KW_WHILE);
+    parser_expect(p, '(');
+    ast_node_t* condition = parser_read_expr(p, ')');
+    parser_expect(p, ')');
+    ast_node_t* while_stmt = ast_while_init(p->current_func->datatype, while_keyword->loc,
+        isfloattype(condition->datatype->type) ? ast_cast_init(t_i64, condition->loc, condition) : condition);
+    if (parser_check(p, '{'))
+    {
+        parser_get(p);
+        parser_read_body(p, while_stmt->while_then);
+    }
+    else
+        vector_push(while_stmt->while_then->statements, parser_read_stmt(p));
+    return while_stmt;
+}
+
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator)
 {
     datatype_t* dt = calloc(1, sizeof(datatype_t));
     dt->visibility = VT_PRIVATE;
@@ -370,6 +474,8 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
     {
         token_t* token = parser_peek(p);
         if (token != NULL && token->type == TT_IDENTIFIER)
+            break;
+        if (token->id == terminator)
             break;
         datatype_type dtt = parser_get_datatype_type(p);
         if (dtt == -2)
@@ -406,6 +512,18 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
             case KW_UNSIGNED:
                 dt->usign = true;
                 break;
+            case KW_LBRACK:
+            {
+                parser_get(p);
+                datatype_t* ddt = calloc(1, sizeof(datatype_t));
+                *ddt = *dt;
+                dt->array_type = ddt;
+                dt->size = 8;
+                dt->type = DTT_ARRAY;
+                dt->usign = false;
+                dt->length = NULL;
+                break;
+            }
         }
     }
     return dt;
@@ -440,7 +558,7 @@ static ast_node_t* parser_read_import(parser_t* p)
 
 static ast_node_t* parser_read_func_definition(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p, DTT_VOID);
+    datatype_t* dt = parser_build_datatype(p, DTT_VOID, NO_TERMINATOR);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* func_node = map_put(p->lenv ? p->lenv : p->genv, func_name_token->content, ast_func_definition_init(dt, func_name_token->loc, func_name_token->content));
     parser_expect(p, '(');
@@ -454,7 +572,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         }
         if (parser_check(p, ','))
             parser_get(p);
-        datatype_t* pdt = parser_build_datatype(p, DTT_I32);
+        datatype_t* pdt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR);
         token_t* param_name_token = parser_expect_type(p, TT_IDENTIFIER);
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
@@ -463,7 +581,8 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         vector_push(func_node->params, lvar);
     }
     parser_expect(p, '{');
-    parser_read_func_body(p, func_node);
+    p->current_func = func_node;
+    parser_read_func_body(p);
     p->lenv = p->lenv->parent;
     if (p->lenv == p->genv)
         p->lenv = NULL;
@@ -471,7 +590,8 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
     return func_node;
 }
 
-static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
+
+static void parser_read_body(parser_t* p, ast_node_t* body)
 {
     for (;;)
     {
@@ -480,12 +600,30 @@ static void parser_read_func_body(parser_t* p, ast_node_t* func_node)
             parser_get(p);
             break;
         }
-        ast_node_t* stmt = parser_read_stmt(p, func_node);
+        ast_node_t* stmt = parser_read_stmt(p);
         if (stmt->type == AST_LVAR)
-            vector_push(func_node->local_variables, stmt);
-        vector_push(func_node->body->statements, stmt);
-        if (parser_check(p, '}') && stmt->type != AST_RETURN && func_node->datatype->type != DTT_VOID) // no return statement
-            vector_push(func_node->body->statements, ast_return_init(stmt->datatype, stmt->loc, ast_iliteral_init(func_node->datatype, stmt->loc, 0)));
+            vector_push(p->current_func->local_variables, stmt);
+        vector_push(body->statements, stmt);
+        if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
+            errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
+    }
+}
+
+static void parser_read_func_body(parser_t* p)
+{
+    for (;;)
+    {
+        if (parser_check(p, '}'))
+        {
+            parser_get(p);
+            break;
+        }
+        ast_node_t* stmt = parser_read_stmt(p);
+        if (stmt->type == AST_LVAR)
+            vector_push(p->current_func->local_variables, stmt);
+        vector_push(p->current_func->body->statements, stmt);
+        if (parser_check(p, '}') && stmt->type != AST_RETURN && p->current_func->datatype->type != DTT_VOID) // no return statement
+            vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, ast_iliteral_init(p->current_func->datatype, stmt->loc, 0)));
         else if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
             errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
     }
@@ -500,7 +638,7 @@ static ast_node_t* parser_read_decl(parser_t* p)
 
 static ast_node_t* parser_read_lvar_decl(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p, DTT_I32);
+    datatype_t* dt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR);
     token_t* var_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* var_node = map_put(p->lenv ? p->lenv : p->genv, var_name_token->content, ast_lvar_init(dt, var_name_token->loc, var_name_token->content));
     if (parser_check(p, OP_ASSIGN))
@@ -520,26 +658,47 @@ static bool parser_is_return_statement(parser_t* p)
     return token->id == KW_RETURN;
 }
 
-static ast_node_t* parser_read_return_statement(parser_t* p, ast_node_t* func_node)
+static bool parser_is_delete_statement(parser_t* p)
 {
-    parser_expect(p, KW_RETURN);
-    ast_node_t* expr = parser_read_expr(p);
-    return ast_return_init(func_node->datatype, expr->loc, expr->datatype != func_node->datatype ? ast_cast_init(func_node->datatype, expr->loc, expr) : expr);
+    token_t* token = parser_peek(p);
+    if (token == NULL)
+        return false;
+    return token->id == KW_DELETE;
 }
 
-static ast_node_t* parser_read_stmt(parser_t* p, ast_node_t* func_node)
+static ast_node_t* parser_read_return_statement(parser_t* p)
+{
+    parser_expect(p, KW_RETURN);
+    ast_node_t* expr = parser_read_expr(p, ';');
+    return ast_return_init(p->current_func->datatype, expr->loc, expr->datatype != p->current_func->datatype ? ast_cast_init(p->current_func->datatype, expr->loc, expr) : expr);
+}
+
+static ast_node_t* parser_read_delete_statement(parser_t* p)
+{
+    token_t* del_keyword = parser_expect(p, KW_DELETE);
+    ast_node_t* node = ast_get_by_token(p, parser_get(p));
+    parser_expect(p, ';');
+    parser_ensure_cextern(p, "__builtin_delete_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+    return ast_delete_init(t_void, del_keyword->loc, node);
+}
+
+static ast_node_t* parser_read_stmt(parser_t* p)
 {
     if (parser_is_var_decl(p))
         return parser_read_lvar_decl(p);
     if (parser_is_return_statement(p))
-        return parser_read_return_statement(p, func_node);
-    return parser_read_expr(p);
+        return parser_read_return_statement(p);
+    if (parser_is_delete_statement(p))
+        return parser_read_delete_statement(p);
+    if (parser_is_if_statement(p))
+        return parser_read_if_statement(p);
+    if (parser_is_while_statement(p))
+        return parser_read_while_statement(p);
+    return parser_read_expr(p, ';');
 }
 
-static ast_node_t* parser_read_expr(parser_t* p)
+static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int terminator)
 {
-    vector_t* stack = vector_init(20, 10);
-    vector_t* expr_result = vector_init(20, 10);
     vector_t* calls = vector_init(5, 5);
     for (;;)
     {
@@ -547,7 +706,7 @@ static ast_node_t* parser_read_expr(parser_t* p)
         if (token == NULL)
             errorp(0, 0, "unexpected end of file");
         printf("token: %c\n", token->id);
-        if (token->id == ';')
+        if (token->id == ';' && terminator == ';')
             break;
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
             vector_push(expr_result, token);
@@ -559,18 +718,75 @@ static ast_node_t* parser_read_expr(parser_t* p)
             if (node->type != AST_FUNC_DEFINITION)
                 vector_push(expr_result, token);
         }
-        else if (token->id == '(')
+        else if (token->id == '(' || token->id == '[')
             vector_push(stack, token);
-        else if (token->id == ')' || token->id == ',')
+        else if (token->id == ')' || token->id == ',' || token->id == ']')
         {
             while (vector_top(stack) != NULL && ((token_t*) vector_top(stack))->id != '(')
                 vector_push(expr_result, vector_pop(stack));
             if (token->id == ')')
             {
                 vector_pop(stack);
+                if (terminator == ')' && (vector_top(stack) == NULL || ((token_t*) vector_top(stack))->id != '('))
+                {
+                    parser_unget(p);
+                    break;
+                }
                 token_t* call = vector_pop(calls);
                 if (call) vector_push(expr_result, call);
             }
+            if (token->id == ']' && terminator == ']' && (vector_top(stack) == NULL || ((token_t*) vector_top(stack))->id != '['))
+            {
+                parser_unget(p);
+                break;
+            }
+        }
+        else if (token->id == OP_MAKE)
+        {
+            int depth = 0;
+            int terminator = ';';
+            for (int i = 1;; i++)
+            {
+                token_t* far = parser_far_peek(p, i);
+                if (far == NULL)
+                    errorp(token->loc->row, token->loc->col, "unexpected end of file");
+                if (far->id == '[' || far->id == ';')
+                {
+                    terminator = far->id;
+                    break;
+                }
+            }
+            datatype_t* type = parser_build_datatype(p, DTT_VOID, terminator);
+            if (type == NULL)
+                errorp(token->loc->row, token->loc->col, "unexpected end of file");
+            for (;;)
+            {
+                token_t* mtoken = parser_get(p);
+                if (mtoken == NULL)
+                    errorp(token->loc->row, token->loc->col, "unexpected end of file");
+                if (mtoken->id == ',' || mtoken->id == ')' || mtoken->id == ']' || mtoken->id == ';')
+                {
+                    parser_unget(p);
+                    break;
+                }
+                if (mtoken->id == KW_LBRACK)
+                {
+                    vector_t* mstack = vector_init(20, 10);
+                    vector_t* mresult = vector_init(20, 10);
+                    parser_rpn(p, mstack, mresult, ']');
+                    vector_delete(mstack);
+                    parser_expect(p, ']');
+                    for (int i = 0; i < mresult->size; i++)
+                        vector_push(expr_result, vector_get(mresult, i));
+                    vector_delete(mresult);
+                    depth++;
+                }
+            }
+            char* depthbuffer = malloc(33);
+            itos(depth, depthbuffer);
+            vector_push(expr_result, datatype_token_init(TT_DATATYPE, type, token->loc->offset, token->loc->row, token->loc->col));
+            vector_push(expr_result, content_token_init(TT_NUMBER_LITERAL, depthbuffer, token->loc->offset, token->loc->row, token->loc->col));
+            vector_push(expr_result, token);
         }
         else
         {
@@ -595,8 +811,15 @@ static ast_node_t* parser_read_expr(parser_t* p)
     }
     while (vector_top(stack) != NULL)
         vector_push(expr_result, vector_pop(stack));
-    vector_clear(stack, RETAIN_OLD_CAPACITY);
     vector_delete(calls);
+}
+
+static ast_node_t* parser_read_expr(parser_t* p, char terminator)
+{
+    vector_t* stack = vector_init(20, 10);
+    vector_t* expr_result = vector_init(20, 10);
+    parser_rpn(p, stack, expr_result, terminator);
+    vector_clear(stack, RETAIN_OLD_CAPACITY);
     if (!expr_result->size)
         errorp(parser_peek(p)->loc->row, parser_peek(p)->loc->col, "null statement is not allowed");
     for (int i = 0; i < expr_result->size; i++)
@@ -604,6 +827,8 @@ static ast_node_t* parser_read_expr(parser_t* p)
         token_t* token = (token_t*) vector_get(expr_result, i);
         if (token_has_content(token))
             printf("result[%i] = %s\n", i, token->content);
+        else if (token->type == TT_DATATYPE)
+            printf("result[%i] = %i\n", i, token->dt->type);
         else
             printf("result[%i] = %c\n", i, token->id);
     }
@@ -612,6 +837,8 @@ static ast_node_t* parser_read_expr(parser_t* p)
         token_t* token = (token_t*) vector_get(expr_result, i);
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
             vector_push(stack, ast_get_by_token(p, token));
+        if (token->type == TT_DATATYPE)
+            vector_push(stack, ast_stub_init(token->dt, token->loc));
         if (token->type == TT_IDENTIFIER)
         {
             ast_node_t* node = ast_get_by_token(p, token);
@@ -656,7 +883,31 @@ static ast_node_t* parser_read_expr(parser_t* p)
                     if (!lhs || !rhs)
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
                     if (lhs->datatype->type == DTT_LET) lhs->datatype = rhs->datatype;
+                    if (rhs->type == AST_MAKE) lhs->datatype = rhs->datatype;
                     vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
+                    break;
+                }
+                case OP_MAKE:
+                {
+                    ast_node_t* depth_node = vector_pop(stack);
+                    int depth = depth_node->ivalue;
+                    ast_node_t* dt_node = vector_pop(stack);
+                    datatype_t* dt = dt_node->datatype;
+                    for (int i = 0; i < depth; i++)
+                    {
+                        ast_node_t* dimension = vector_pop(stack);
+                        datatype_t* adt = calloc(1, sizeof(datatype_t));
+                        adt->array_type = dt;
+                        adt->length = dimension;
+                        adt->size = 8;
+                        adt->type = DTT_ARRAY;
+                        adt->usign = false;
+                        adt->visibility = VT_PRIVATE;
+                        adt->depth = i + 1;
+                        dt = adt;
+                    }
+                    vector_push(stack, ast_make_init(dt, token->loc));
+                    parser_ensure_cextern(p, "__builtin_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                     break;
                 }
             }

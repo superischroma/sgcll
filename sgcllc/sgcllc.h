@@ -17,6 +17,7 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define TT_CHAR_LITERAL 2
 #define TT_STRING_LITERAL 3
 #define TT_KEYWORD 4
+#define TT_DATATYPE 5
 
 /* Datatype Type */
 
@@ -30,6 +31,7 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define DTT_F64 7
 #define DTT_LET 8
 #define DTT_STRING 9
+#define DTT_ARRAY 10
 
 /* Visibility Type */
 
@@ -71,6 +73,8 @@ enum {
     KW_RPAREN = ')',
     KW_LBRACE = '{',
     KW_RBRACE = '}',
+    KW_LBRACK = '[',
+    KW_RBRACK = ']',
     KW_SEMICOLON = ';',
     KW_COMMA = ',',
     OP_ASSIGN = '=',
@@ -80,6 +84,7 @@ enum {
     OP_DIV = '/',
     OP_MOD = '%',
     AST_FILE = 256,
+    AST_STUB,
     AST_IMPORT,
     AST_FUNC_DEFINITION,
     AST_FUNC_CALL,
@@ -90,7 +95,11 @@ enum {
     AST_FLITERAL,
     AST_SLITERAL,
     AST_RETURN,
+    AST_DELETE,
+    AST_IF,
+    AST_WHILE,
     AST_CAST,
+    AST_MAKE,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -123,6 +132,8 @@ typedef struct
     int col;
 } location_t;
 
+typedef struct datatype_t datatype_t;
+
 typedef struct
 {
     token_type type;
@@ -131,6 +142,7 @@ typedef struct
     {
         int id;
         char* content;
+        datatype_t* dt;
     };
 } token_t;
 
@@ -142,17 +154,26 @@ typedef struct
     int alloc_delta;
 } buffer_t;
 
+typedef struct ast_node_t ast_node_t;
+
 typedef struct datatype_t
 {
     visibility_type visibility;
     datatype_type type;
     int size;
     bool usign;
-    struct datatype_t* ptr_type; // array/pointer
-    int length; // array
-    struct datatype_t* ret_type; // function
-    vector_t* parameters;
-    char* name;
+    union
+    {
+        // DTT_OBJECT (soon...)
+        char* name;
+        // DTT_ARRAY
+        struct
+        {
+            int depth;
+            struct datatype_t* array_type;
+            ast_node_t* length;
+        };
+    };
 } datatype_t;
 
 typedef struct ast_node_t
@@ -212,9 +233,9 @@ typedef struct ast_node_t
         // AST_IF
         struct
         {
-            struct ast_node_t* condition;
-            struct ast_node_t* then;
-            struct ast_node_t* otherwise;
+            struct ast_node_t* if_cond;
+            struct ast_node_t* if_then;
+            struct ast_node_t* if_els;
         };
         // AST_FILE
         struct
@@ -222,10 +243,18 @@ typedef struct ast_node_t
             vector_t* decls;
             vector_t* imports;
         };
+        // AST_WHILE
+        struct
+        {
+            struct ast_node_t* while_cond;
+            struct ast_node_t* while_then;
+        };
         // AST_IMPORT
         char* path;
         // AST_RETURN
         struct ast_node_t* retval;
+        // AST_DELETE
+        struct ast_node_t* delsym;
         // AST_BLOCK
         vector_t* statements;
         // AST_CAST
@@ -253,6 +282,7 @@ typedef struct parser_t
     vector_t* userexterns;
     vector_t* cexterns;
     vector_t* links;
+    ast_node_t* current_func;
 } parser_t;
 
 typedef struct emitter_t
@@ -303,6 +333,7 @@ void systemf(const char* fmt, ...);
 
 token_t* content_token_init(token_type type, char* content, int offset, int row, int col);
 token_t* id_token_init(token_type type, int id, int offset, int row, int col);
+token_t* datatype_token_init(token_type type, datatype_t* dt, int offset, int row, int col);
 void token_delete(token_t* token);
 
 /* vector.c */
@@ -315,6 +346,7 @@ void* vector_get(vector_t* vec, int index);
 void* vector_set(vector_t* vec, int index, void* element);
 void* vector_top(vector_t* vec);
 void vector_clear(vector_t* vec, int capacity);
+void vector_concat(vector_t* vec, vector_t* other);
 void vector_delete(vector_t* vec);
 
 /* error.c */
@@ -347,6 +379,11 @@ ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func
 ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel);
 ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval);
 ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval);
+ast_node_t* ast_if_init(datatype_t* dt, location_t* loc, ast_node_t* if_cond);
+ast_node_t* ast_while_init(datatype_t* dt, location_t* loc, ast_node_t* while_cond);
+ast_node_t* ast_delete_init(datatype_t* dt, location_t* loc, ast_node_t* delsym);
+ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc);
+ast_node_t* ast_make_init(datatype_t* dt, location_t* loc);
 void ast_print(ast_node_t* node);
 
 /* parser.c */
@@ -357,6 +394,7 @@ bool parser_eof(parser_t* p);
 token_t* parser_read(parser_t* p);
 void parser_delete(parser_t* p);
 void set_up_builtins(void);
+char* make_label(parser_t* p, void* content);
 
 /* emitter.c */
 

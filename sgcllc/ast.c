@@ -3,6 +3,8 @@
 
 #include "sgcllc.h"
 
+static void ast_print_recur(ast_node_t* node, int indent);
+
 static ast_node_t* ast_init(ast_node_type type, datatype_t* datatype, location_t* loc, ast_node_t* base)
 {
     ast_node_t* node = calloc(1, sizeof(ast_node_t));
@@ -111,6 +113,30 @@ ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval)
     });
 }
 
+ast_node_t* ast_delete_init(datatype_t* dt, location_t* loc, ast_node_t* delsym)
+{
+    return ast_init(AST_DELETE, dt, loc, &(ast_node_t){
+        .delsym = delsym
+    });
+}
+
+ast_node_t* ast_if_init(datatype_t* dt, location_t* loc, ast_node_t* if_cond)
+{
+    return ast_init(AST_IF, dt, loc, &(ast_node_t){
+        .if_cond = if_cond,
+        .if_then = ast_block_init(loc),
+        .if_els = ast_block_init(loc)
+    });
+}
+
+ast_node_t* ast_while_init(datatype_t* dt, location_t* loc, ast_node_t* while_cond)
+{
+    return ast_init(AST_WHILE, dt, loc, &(ast_node_t){
+        .while_cond = while_cond,
+        .while_then = ast_block_init(loc)
+    });
+}
+
 ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval)
 {
     return ast_init(AST_CAST, dt, loc, &(ast_node_t){
@@ -118,9 +144,54 @@ ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval)
     });
 }
 
+ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc)
+{
+    return ast_init(AST_STUB, dt, loc, &(ast_node_t){});
+}
+
+ast_node_t* ast_make_init(datatype_t* dt, location_t* loc)
+{
+    return ast_init(AST_MAKE, dt, loc, &(ast_node_t){});
+}
+
+static void ast_print_datatype(datatype_t* dt, int indent)
+{
+    if (!dt) return;
+    indprintf(indent, "visibility: %i\n", dt->visibility);
+    indprintf(indent, "type: %i\n", dt->type);
+    indprintf(indent, "size: %i\n", dt->size);
+    indprintf(indent, "usign: %i\n", dt->usign);
+    switch (dt->type)
+    {
+        case DTT_ARRAY:
+        {
+            indprintf(indent, "array_type: {\n");
+            indent++;
+            ast_print_datatype(dt->array_type, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            if (dt->length)
+            {
+                indprintf(indent, "length: {\n");
+                indent++;
+                ast_print_recur(dt->length, indent);
+                indent--;
+                indprintf(indent, "}\n");
+            }
+            else
+                indprintf(indent, "length: undefined\n");
+            indprintf(indent, "depth: %i\n", dt->depth);
+        }
+    }
+}
+
 static void std_ast_print(ast_node_t* node, int indent)
 {
-    indprintf(indent, "datatype: %i\n", node->datatype ? node->datatype->type : -1);
+    indprintf(indent, "datatype: {\n");
+    indent++;
+    ast_print_datatype(node->datatype, indent);
+    indent--;
+    indprintf(indent, "}\n");
     indprintf(indent, "loc: {\n");
     indent++;
     indprintf(indent, "offset: %i\n", node->loc->offset);
@@ -230,7 +301,7 @@ static void ast_print_recur(ast_node_t* node, int indent)
         case OP_ASSIGN_DIV:
         case OP_ASSIGN_MOD:
         {
-            indprintf(indent, "AST_BINARY_OP (%c/%i) {\n", node->type, node->type);
+            indprintf(indent, "AST_BINARY_OP (%c, id: %i) {\n", node->type, node->type);
             indent++;
             std_ast_print(node, indent);
             indprintf(indent, "lhs: {\n");
@@ -297,9 +368,47 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indprintf(indent, "AST_RETURN {\n");
             indent++;
             std_ast_print(node, indent);
-            indprintf(indent, "retval: {\n", node->fvalue);
+            indprintf(indent, "retval: {\n");
             indent++;
             ast_print_recur(node->retval, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_DELETE:
+        {
+            indprintf(indent, "AST_DELETE {\n");
+            indent++;
+            std_ast_print(node, indent);
+            indprintf(indent, "delsym: {\n");
+            indent++;
+            ast_print_recur(node->delsym, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_IF:
+        {
+            indprintf(indent, "AST_IF {\n");
+            indent++;
+            std_ast_print(node, indent);
+            indprintf(indent, "condition: {\n");
+            indent++;
+            ast_print_recur(node->if_cond, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indprintf(indent, "then: {\n");
+            indent++;
+            ast_print_recur(node->if_then, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indprintf(indent, "otherwise: {\n");
+            indent++;
+            ast_print_recur(node->if_els, indent);
             indent--;
             indprintf(indent, "}\n");
             indent--;
@@ -316,6 +425,15 @@ static void ast_print_recur(ast_node_t* node, int indent)
             ast_print_recur(node->castval, indent);
             indent--;
             indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_MAKE:
+        {
+            indprintf(indent, "AST_MAKE {\n");
+            indent++;
+            std_ast_print(node, indent);
             indent--;
             indprintf(indent, "}\n");
             break;
