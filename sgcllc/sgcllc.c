@@ -37,7 +37,7 @@ vector_t* build(char* path)
     if (!chk_extension(path, pathl))
         errorc("input file does not have extension .sgcll");
     FILE* file = fopen(path, "r");
-    lexer_t* lexer = lex_init(file);
+    lexer_t* lexer = lex_init(file, path);
     while (!lex_eof(lexer))
         lex_read_token(lexer);
     for (int i = 0; i < lexer->output->size; i++)

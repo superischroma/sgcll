@@ -1,8 +1,13 @@
-namespace io;
+//namespace io;
 
 //public lower print(string str);
 
 public print(string str)
 {
     __builtin_string_println(str);
+}
+
+public print(i32 i)
+{
+    __builtin_i32_println(i);
 }

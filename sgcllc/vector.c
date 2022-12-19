@@ -75,9 +75,14 @@ void vector_clear(vector_t* vec, int capacity)
 void vector_concat(vector_t* vec, vector_t* other)
 {
     if (vec->size + other->size >= vec->capacity)
-        vec->data = realloc(vec->data, sizeof(void*) * (vec->capacity = vec->size + other->size));
-    memcpy(vec->data + vec->size, other->data, other->size);
-    vec->size = vec->size + other->size;
+        vec->data = realloc(vec->data, sizeof(void*) * (vec->capacity += other->size));
+    memcpy(vec->data + vec->size, other->data, sizeof(void*) * other->size);
+    vec->size += other->size;
+}
+
+bool vector_check_bounds(vector_t* vec, int index)
+{
+    return index >= 0 && index < vec->size;
 }
 
 void vector_delete(vector_t* vec)

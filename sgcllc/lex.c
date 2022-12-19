@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "sgcllc.h"
 
-lexer_t* lex_init(FILE* file)
+lexer_t* lex_init(FILE* file, char* path)
 {
     lexer_t* lex = calloc(1, sizeof(lexer_t));
     lex->file = file;
@@ -13,6 +14,7 @@ lexer_t* lex_init(FILE* file)
     lex->col = 0;
     lex->offset = 0;
     lex->output = vector_init(50, 20);
+    lex->filename = isolate_filename(path);
     return lex;
 }
 
@@ -170,21 +172,14 @@ void lex_read_token(lexer_t* lex)
         }
         case KW_LPAREN:
         case KW_RPAREN:
+        case KW_LBRACE:
         case KW_RBRACE:
         case KW_LBRACK:
         case KW_RBRACK:
         case KW_SEMICOLON:
         case KW_COMMA:
-        case OP_ASSIGN:
+        case OP_MAGNITUDE:
         {
-            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
-            break;
-        }
-        case KW_LBRACE:
-        {
-            token_t* prev = vector_top(lex->output);
-            if (prev != NULL && token_has_content(prev))
-                c = OP_MAKE_SIZE;
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }
@@ -192,6 +187,8 @@ void lex_read_token(lexer_t* lex)
         case OP_SUB:
         case OP_MUL:
         case OP_MOD:
+        case OP_ASSIGN:
+        case OP_NOT:
         {
             if (lex_peek(lex) == '=')
             {
@@ -201,6 +198,8 @@ void lex_read_token(lexer_t* lex)
                     case OP_SUB: c = OP_ASSIGN_SUB; break;
                     case OP_MUL: c = OP_ASSIGN_MUL; break;
                     case OP_MOD: c = OP_ASSIGN_MOD; break;
+                    case OP_ASSIGN: c = OP_EQUAL; break;
+                    case OP_NOT: c = OP_NOT_EQUAL; break;
                 }
                 lex_read(lex);
             }
@@ -265,6 +264,7 @@ void lex_delete(lexer_t* lex)
 {
     if (!lex) return;
     vector_delete(lex->output);
+    free(lex->filename);
     free(lex);
 }
 

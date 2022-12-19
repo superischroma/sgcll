@@ -1,0 +1,8 @@
+enter begin;
+
+import "io";
+
+i32 begin()
+{
+    print("hi!");
+}

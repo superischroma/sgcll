@@ -21,6 +21,16 @@ char buffer_append(buffer_t* buffer, char c)
     return c;
 }
 
+char* buffer_string(buffer_t* buffer, char* str)
+{
+    int len = strlen(str);
+    if (buffer->size + len >= buffer->capacity)
+        buffer->data = realloc(buffer->data, buffer->capacity += len);
+    memcpy(buffer->data + buffer->size, str, len);
+    buffer->size += len;
+    return str;
+}
+
 char* buffer_export(buffer_t* buffer)
 {
     char* export = malloc(buffer->size);

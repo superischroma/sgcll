@@ -1,0 +1,6 @@
+import "io";
+
+i32 main()
+{
+    internal(5);
+}

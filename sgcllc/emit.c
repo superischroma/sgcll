@@ -15,10 +15,13 @@ const char tmpreg[] = "bot012345"; // temporary registers: b, src, dest, 10, 11,
 #define emit_noindent(...) emitf(e, __VA_ARGS__)
 
 #define floatsize(i) (i == 4 ? 's' : 'd')
+#define reference_load_operation(dt) (dt->ref ? "lea" : "mov")
+#define maybe_deref(dt) (dt->type == DTT_REFERENCE ? dt->ref_type : dt
 
 static void emit_file(emitter_t* e, ast_node_t* file);
 static void emit_gvar_decl(emitter_t* e, ast_node_t* gvar);
 static void emit_func_definition(emitter_t* e, ast_node_t* func_definition);
+static void emit_subscript(emitter_t* e, ast_node_t* op, bool deref);
 static void emit_stmt(emitter_t* e, ast_node_t* stmt);
 static void emit_expr(emitter_t* e, ast_node_t* expr);
 static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar);
@@ -129,31 +132,19 @@ static char* emitter_restore_float_reg(emitter_t* e, int size)
 static void emit_file(emitter_t* e, ast_node_t* file)
 {
     for (int i = 0; i < e->p->userexterns->size; i++)
-        emit(".extern %s", ((ast_node_t*) vector_get(e->p->userexterns, i))->func_name);
+        emit(".extern %s", ((ast_node_t*) vector_get(e->p->userexterns, i))->func_label);
     for (int i = 0; i < e->p->cexterns->size; i++)
-        emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_name);
-    if (map_get(e->p->genv, "main"))
-        emit(".global main");
-    else
+        emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_label);
+    ast_node_t* defaul_main = ast_func_definition_init(t_i32, NULL, e->p->entry, e->p->lex->filename);
+    char* defaul_label = make_func_label(e->p->lex->filename, defaul_main);
+    printf("default label: %s\n", defaul_label);
+    if (map_get(e->p->genv, defaul_label))
     {
-        char* global_func = NULL;
-        for (int i = 0; i < e->p->genv->capacity; i++)
-        {
-            if (e->p->genv->key[i] != NULL)
-            {
-                ast_node_t* node = e->p->genv->value[i];
-                if (node->type != AST_FUNC_DEFINITION)
-                    continue;
-                if (node->extrn)
-                    continue;
-                global_func = node->func_name;
-                break;
-            }
-        }
-        if (!global_func)
-            errore(0, 0, "no entry point present");
-        emit(".global %s", global_func);
+        emit_noindent("main:");
+        emit("jmp %s", defaul_label);
+        emit(".global main");
     }
+    free(defaul_label);
     /*
     for (int i = 0; i < file->imports->size; i++)
     {
@@ -202,7 +193,7 @@ static void emit_gvar_decl(emitter_t* e, ast_node_t* gvar)
 
 static void emit_func_definition(emitter_t* e, ast_node_t* func_definition)
 {
-    emit_noindent("%s:", func_definition->func_name);
+    emit_noindent("%s:", func_definition->func_label);
     emit("pushq %%rbp");
     emit("movq %%rsp, %%rbp");
     int stackalloc = find_stackalloc(func_definition->local_variables);
@@ -222,32 +213,7 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition)
     emit("addq $%i, %%rsp", stackalloc);
     emit("popq %%rbp");
     emit("ret");
-}
-
-static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
-{
-    lvar->lvoffset = -(e->stackoffset += lvar->datatype->size);
-}
-
-static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
-{
-    int src_size = src->size, dest_size = dest->size;
-    bool src_float = isfloattype(src->type), dest_float = isfloattype(dest->type);
-    if (dest_size <= src_size && !src_float && !dest_float)
-        return;
-    if (dest_size == src_size && src_float && dest_float)
-        return;
-    if (!src_float && !dest_float)
-        emit("movsx %%%s, %%%s", find_register(REG_A, src_size), find_register(REG_A, dest_size));
-    else if (!src_float && dest_float)
-    {
-        emit("pxor %%xmm0, %%xmm0");
-        emit("cvtsi2s%c%c %%%s, %%xmm0", floatsize(dest->size), int_reg_size(max(src->size, 4)), find_register(REG_A, max(src_size, 4)));
-    }
-    else if (src_float && !dest_float)
-        emit("cvts%c2si%c %%xmm0, %%%s", floatsize(src->size), int_reg_size(max(dest->size, 4)), find_register(REG_A, max(dest_size, 4)));
-    else
-        emit("cvts%c2s%c %%xmm0, %%xmm0", floatsize(src->size), floatsize(dest->size));
+    emit(".global %s", func_definition->func_label);
 }
 
 static bool chk_type_mismatch(datatype_t* lhs, datatype_t* rhs)
@@ -273,9 +239,52 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
                 emit("mov%c %%%s, %i(%%rbp)", int_reg_size(op->lhs->datatype->size), find_register(REG_A, op->lhs->datatype->size), op->lhs->lvoffset);
             break;
         }
+        case OP_SUBSCRIPT:
+        {
+            if (chk_type_mismatch(op->lhs->datatype, op->rhs->datatype))
+                errore(op->loc->row, op->loc->col, "type '%i' cannot be assigned to '%i'", op->rhs->datatype->type, op->lhs->datatype->type);
+            if (isfloattype(op->lhs->datatype->type))
+                emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), op->lhs->datatype->size);
+            else
+                emitter_stash_int_reg(e, find_register(REG_A, op->lhs->datatype->size));
+            emit_subscript(e, op->lhs, false);
+            if (isfloattype(op->lhs->datatype->type))
+                emit("movs%c %%%s, (%%rax)", floatsize(op->lhs->datatype->size), emitter_restore_float_reg(e, op->lhs->datatype->size));
+            else
+                emit("mov%c %%%s, (%%rax)", int_reg_size(op->lhs->datatype->size), emitter_restore_int_reg(e, op->lhs->datatype->size));
+            break;
+        }
         default:
             errore(op->loc->row, op->loc->col, "assignment operator cannot be applied to left side of this expression");
     }
+}
+
+static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
+{
+    lvar->lvoffset = -(e->stackoffset += lvar->datatype->size);
+    if (lvar->vinit)
+        emit_expr(e, lvar->vinit);
+}
+
+static void emit_conv(emitter_t* e, datatype_t* src, datatype_t* dest)
+{
+    int src_size = src->size, dest_size = dest->size;
+    bool src_float = isfloattype(src->type), dest_float = isfloattype(dest->type);
+    if (dest_size <= src_size && !src_float && !dest_float)
+        return;
+    if (dest_size == src_size && src_float && dest_float)
+        return;
+    if (!src_float && !dest_float)
+        emit("movsx %%%s, %%%s", find_register(REG_A, src_size), find_register(REG_A, dest_size));
+    else if (!src_float && dest_float)
+    {
+        emit("pxor %%xmm0, %%xmm0");
+        emit("cvtsi2s%c%c %%%s, %%xmm0", floatsize(dest->size), int_reg_size(max(src->size, 4)), find_register(REG_A, max(src_size, 4)));
+    }
+    else if (src_float && !dest_float)
+        emit("cvts%c2si%c %%xmm0, %%%s", floatsize(src->size), int_reg_size(max(dest->size, 4)), find_register(REG_A, max(dest_size, 4)));
+    else
+        emit("cvts%c2s%c %%xmm0, %%xmm0", floatsize(src->size), floatsize(dest->size));
 }
 
 static void emit_make(emitter_t* e, ast_node_t* make)
@@ -387,6 +396,63 @@ static void emit_mul_div(emitter_t* e, ast_node_t* op)
         emit_float_add_sub_mul_div(e, op);
 }
 
+static void emit_int_conditional(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* operation = NULL;
+    switch (op->type)
+    {
+        case OP_EQUAL: operation = "sete"; break;
+        case OP_NOT_EQUAL: operation = "setne"; break;
+        default:
+            errore(op->loc->row, op->loc->col, "unknown operation");
+    }
+    char* regA = find_register(REG_A, op->datatype->size);
+    char* regAb = find_register(REG_A, 1);
+    emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, op->datatype);
+    emitter_stash_int_reg(e, regA); // rhs stashed
+    emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, op->datatype);
+    emit("cmp%c %%%s, %%%s", int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), regA);
+    emit("%s %%%s", operation, regAb);
+    emit("movzb%c %%%s, %%%s", int_reg_size(op->datatype->size), regAb, regA);
+}
+
+static void emit_conditional(emitter_t* e, ast_node_t* op)
+{
+    if (!isfloattype(op->datatype->type))
+        emit_int_conditional(e, op);
+    //else
+    //    emit_float_conditional(e, op);
+}
+
+static void emit_subscript(emitter_t* e, ast_node_t* op, bool deref)
+{
+    char* regA = "rax";
+    emit_expr(e, op->rhs);
+    emit_conv(e, op->rhs->datatype, t_i64);
+    emitter_stash_int_reg(e, regA);
+    switch (op->lhs->type)
+    {
+        case AST_LVAR:
+        {
+            emit("movq %i(%%rbp), %%%s", op->lhs->lvoffset, regA);
+            break;
+        }
+    }
+    char* regIndex = emitter_restore_int_reg(e, 8);
+    emit("imulq $%i, %%%s, %%%s", op->lhs->datatype->array_type->size, regIndex, regIndex);
+    emit("addq %%%s, %%%s", regIndex, regA);
+    if (deref)
+    {
+        if (!isfloattype(op->datatype->type))
+            emit("mov%c (%%%s), %%%s", int_reg_size(op->datatype->size), regA, find_register(REG_A, op->datatype->size));
+        else
+            emit("movs%c (%%%s), %%xmm0", floatsize(op->datatype->size), regA);
+    }
+}
+
 static void emit_func_call(emitter_t* e, ast_node_t* call)
 {
     for (int i = call->args->size - 1; i >= 0; i--)
@@ -396,8 +462,6 @@ static void emit_func_call(emitter_t* e, ast_node_t* call)
             errore(call->loc->row, call->loc->col, "function calls with 4+ arguments are not supported yet");
         else
         {
-            if (arg->type == AST_FLITERAL)
-                printf("what: %f (%s, %i)\n", arg->fvalue, arg->flabel, i);
             emit_expr(e, arg);
             if (arg->datatype->type == DTT_STRING)
                 emit("movq %%rax, %%%s", find_register(x64cc[i], 8));
@@ -410,7 +474,7 @@ static void emit_func_call(emitter_t* e, ast_node_t* call)
                 emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->type), find_register(x64cc[i], arg->datatype->type));
         }
     }
-    emit("call %s", call->func->func_name);
+    emit("call %s", call->func->func_label);
 }
 
 static void emit_if_statement(emitter_t* e, ast_node_t* stmt)
@@ -446,6 +510,22 @@ static void emit_while_statement(emitter_t* e, ast_node_t* stmt)
     emit_noindent("%s:", check_cond);
     emit_expr(e, stmt->while_cond);
     emit("cmp%c $0, %%%s", int_reg_size(stmt->while_cond->datatype->size), find_register(REG_A, stmt->while_cond->datatype->type));
+    emit("jne %s", loop);
+}
+
+static void emit_for_statement(emitter_t* e, ast_node_t* stmt)
+{
+    emit_stmt(e, stmt->for_init);
+    char* check_cond = make_label(e->p, NULL);
+    emit("jmp %s", check_cond);
+    char* loop = make_label(e->p, NULL);
+    emit_noindent("%s:", loop);
+    for (int i = 0; i < stmt->for_then->statements->size; i++)
+        emit_stmt(e, vector_get(stmt->for_then->statements, i));
+    emit_expr(e, stmt->for_post);
+    emit_noindent("%s:", check_cond);
+    emit_expr(e, stmt->for_cond);
+    emit("cmp%c $0, %%%s", int_reg_size(stmt->for_cond->datatype->size), find_register(REG_A, stmt->for_cond->datatype->type));
     emit("jne %s", loop);
 }
 
@@ -528,6 +608,17 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit_assign(e, expr);
             break;
         }
+        case OP_EQUAL:
+        case OP_NOT_EQUAL:
+        {
+            emit_conditional(e, expr);
+            break;
+        }
+        case OP_SUBSCRIPT:
+        {
+            emit_subscript(e, expr, true);
+            break;
+        }
         case AST_ILITERAL:
         {
             emit("mov%c $%i, %%%s", int_reg_size(expr->datatype->size), expr->ivalue, find_register(REG_A, expr->datatype->size));
@@ -567,6 +658,20 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit_make(e, expr);
             break;
         }
+        case OP_MAGNITUDE:
+        {
+            switch (expr->operand->datatype->type)
+            {
+                case DTT_ARRAY:
+                {
+                    emit_expr(e, expr->operand);
+                    emit("mov %%rax, %%rcx");
+                    emit("call __builtin_array_size");
+                    break;
+                }
+            }
+            break;
+        }
         default:
             errore(expr->loc->row, expr->loc->col, "unable to emit expressions of type %i at this time", expr->type);
     }
@@ -594,6 +699,11 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt)
         case AST_WHILE:
         {
             emit_while_statement(e, stmt);
+            break;
+        }
+        case AST_FOR:
+        {
+            emit_for_statement(e, stmt);
             break;
         }
         case AST_DELETE:

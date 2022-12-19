@@ -1,0 +1,25 @@
+function label format: <filename>@<g|b|c|d>@[<blueprint name>@]<function/blueprint name>[@t1@t2...@tn]
+
+the [@t1@t2...@tn] at the end can represent a variable amount of types/type specifiers/array dimensions
+
+for example, f64 sum(f64 a, f64 b) declared in file math.sgcll
+
+would be: math@g@sum@f64@f64
+
+i32 add_coordinates(point p) declared in file space.sgcll
+
+would be: space@g@add_coordinates@point
+
+i32 sum() declared in file math.sgcll inside of an object named 'numbers'
+
+would be: math@b@numbers@sum@numbers
+
+(the above example has an arg of type 'numbers' because of the implicit this)
+
+public constructor(i32 i) declared in file test.sgcll inside of an object named 'example'
+
+would be: test$c$example$i32
+
+i32 print_nums(unsigned i32[] nums) declared in n.sgcll inside of an object called 'nb'
+
+would be: n@b@nb@print_nums@unsigned$i32$$1

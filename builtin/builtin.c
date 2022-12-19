@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#define __BUILTIN_DEBUG
+
 #define __builtin_abs(x) ((x) < 0 ? -(x) : (x))
 #define __builtin_fmod(x, y) (x - y * (int) (x / y))
 
@@ -104,7 +106,11 @@ static void __builtin_delete_array_recur(void* array, size_t dc, unsigned long l
         for (int i = 0; i < *dimensions; i++)
             __builtin_delete_array_recur(((void**) array)[i], dc - 1, dimensions + 1);
     }
-    HeapFree(GetProcessHeap(), 0, (char*) array - 1);
+    WINBOOL result = HeapFree(GetProcessHeap(), 0, (char*) array - 1);
+    #ifdef __BUILTIN_DEBUG
+    if (result)
+        __builtin_string_println("[builtin debug] deallocated array");
+    #endif
 }
 
 void __builtin_delete_array(void* array, size_t dc, ...)

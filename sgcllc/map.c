@@ -111,6 +111,25 @@ bool map_erase(map_t* map, char* k)
     return false;
 }
 
+vector_t* map_keys(map_t* map)
+{
+    vector_t* vec = vector_init(15, 15);
+    for (int i = 0; i < map->capacity; i++)
+    {
+        char* key = map->key[i];
+        if (key == NULL)
+            continue;
+        vector_push(vec, key);
+    }
+    if (map->parent)
+    {
+        vector_t* sub = map_keys(map->parent);
+        vector_concat(vec, sub);
+        vector_delete(sub);
+    }
+    return vec;
+}
+
 void map_delete(map_t* map)
 {
     if (!map) return;

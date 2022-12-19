@@ -1,0 +1,7 @@
+i32 main()
+{
+    f32[] decimals = make f32[5];
+    decimals[0] = 5.35f;
+    __builtin_f32_println(decimals[0]);
+    delete decimals;
+}

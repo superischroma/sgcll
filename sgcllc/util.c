@@ -70,3 +70,36 @@ void systemf(const char* fmt, ...)
     va_end(args);
     system(buffer);
 }
+
+char* isolate_filename(char* path)
+{
+    buffer_t* namebuf = buffer_init(30, 10);
+    int k = 0;
+    for (int i = strlen(path) - 1, started = false; i >= 0 && path[i] != '/' && path[i] != '\\'; i--)
+    {
+        if (!started)
+        {
+            if (path[i] == '.')
+                started = true;
+            continue;
+        }
+        buffer_append(namebuf, path[i]);
+        k++;
+    }
+    char* name;
+    if (namebuf->size)
+    {
+        buffer_append(namebuf, '\0');
+        name = buffer_export(namebuf);
+        for (int j = 0; j < k / 2; j++)
+        {
+            char temp = name[j];
+            name[j] = name[k - j - 1];
+            name[k - j - 1] = temp;
+        }
+    }
+    else
+        name = path;
+    buffer_delete(namebuf);
+    return name;
+}

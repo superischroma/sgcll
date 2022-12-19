@@ -101,7 +101,7 @@ void write_header(FILE* out, map_t* genv)
     }
 }
 
-vector_t* read_header(FILE* in)
+vector_t* read_header(FILE* in, char* filename)
 {
     #define make_datatype \
         datatype_t* dt = calloc(1, sizeof(datatype_t)); \
@@ -150,7 +150,7 @@ vector_t* read_header(FILE* in)
         else if (decl_type == 0x01)
         {
             make_datatype;
-            ast_node_t* func_node = vector_push(vec, ast_builtin_init(dt, name, vector_init(5, 5)));
+            ast_node_t* func_node = vector_push(vec, ast_builtin_init(dt, name, vector_init(5, 5), filename));
             short param_count = readi16;
             for (int i = 0; i < param_count; i++)
             {
@@ -164,8 +164,9 @@ vector_t* read_header(FILE* in)
                 bool usign = read;
                 char* name = readstr;
                 make_datatype;
-                vector_push(func_node->params, ast_lvar_init(dt, NULL, name));
+                vector_push(func_node->params, ast_lvar_init(dt, NULL, name, NULL));
             }
+            func_node->func_label = make_func_label(filename, func_node);
         }
     }
     return vec;
