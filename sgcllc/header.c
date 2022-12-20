@@ -164,9 +164,9 @@ vector_t* read_header(FILE* in, char* filename)
                 bool usign = read;
                 char* name = readstr;
                 make_datatype;
-                vector_push(func_node->params, ast_lvar_init(dt, NULL, name, NULL));
+                vector_push(func_node->params, ast_lvar_init(dt, NULL, name, NULL, filename));
             }
-            func_node->func_label = make_func_label(filename, func_node);
+            func_node->func_label = make_func_label(filename, func_node, NULL);
         }
     }
     return vec;

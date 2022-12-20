@@ -179,6 +179,7 @@ void lex_read_token(lexer_t* lex)
         case KW_SEMICOLON:
         case KW_COMMA:
         case OP_MAGNITUDE:
+        case OP_SELECTION: // i'll have to change this eventually for varargs
         {
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;

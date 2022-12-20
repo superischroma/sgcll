@@ -32,7 +32,7 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define DTT_LET 8
 #define DTT_STRING 9
 #define DTT_ARRAY 10
-#define DTT_REFERENCE 11
+#define DTT_OBJECT 11
 
 /* Visibility Type */
 
@@ -87,6 +87,7 @@ enum {
     OP_NOT = '!',
     OP_SUBSCRIPT = '[',
     OP_MAGNITUDE = '#',
+    OP_SELECTION = '.',
     AST_FILE = 256,
     AST_STUB,
     AST_IMPORT,
@@ -171,7 +172,7 @@ typedef struct datatype_t
     bool usign;
     union
     {
-        // DTT_OBJECT (soon...)
+        // DTT_OBJECT
         char* name;
         // DTT_ARRAY
         struct
@@ -180,8 +181,6 @@ typedef struct datatype_t
             struct datatype_t* array_type;
             ast_node_t* length;
         };
-        // DTT_REFERENCE
-        struct datatype_t* ref_type;
     };
 } datatype_t;
 
@@ -207,17 +206,15 @@ typedef struct ast_node_t
             char* svalue;
             char* slabel;
         };
-        // AST_LVAR/AST_GVAR/AST_BVAR
+        // AST_LVAR/AST_GVAR
         struct
         {
             char* var_name;
             struct ast_node_t* vinit;
             // AST_LVAR
-            int lvoffset;
+            int voffset;
             // AST_GVAR
             char* gvlabel;
-            // AST_BVAR
-            int bvoffset;
         };
         // AST_BINARY_OP
         struct
@@ -230,6 +227,7 @@ typedef struct ast_node_t
         // AST_FUNC_DEFINITION
         struct
         {
+            char func_type;
             char* func_name;
             char* func_label;
             vector_t* params;
@@ -285,6 +283,9 @@ typedef struct ast_node_t
         {
             vector_t* inst_variables;
             vector_t* methods;
+            char* bp_name;
+            datatype_t* bp_datatype;
+            int bp_size;
         };
     };
 } ast_node_t;
@@ -403,9 +404,9 @@ void map_delete(map_t* map);
 
 ast_node_t* ast_file_init(location_t* loc);
 ast_node_t* ast_import_init(location_t* loc, char* path);
-ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char* func_name, char* residing);
+ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_type, char* func_name, char* residing);
 ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing);
-ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name, ast_node_t* vinit);
+ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name, ast_node_t* vinit, char* residing);
 ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue);
 ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue, char* slabel);
 ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* lhs, ast_node_t* rhs);
@@ -420,13 +421,14 @@ ast_node_t* ast_delete_init(datatype_t* dt, location_t* loc, ast_node_t* delsym)
 ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_make_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_unary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* operand);
-ast_node_t* ast_enter_init(datatype_t* dt, location_t* loc, char* entry);
+ast_node_t* ast_blueprint_init(location_t* loc, char* bp_name, datatype_t* dt);
 void ast_print(ast_node_t* node);
+void print_datatype(datatype_t* dt);
 
 /* parser.c */
 
 extern datatype_t* t_void, * t_bool, * t_i8, * t_i16, * t_i32, * t_i64, * t_ui8, * t_ui16,
-    * t_ui32, * t_ui64, * t_f32, * t_f64, * t_string, * t_array;
+    * t_ui32, * t_ui64, * t_f32, * t_f64, * t_string, * t_array, * t_object;
 
 parser_t* parser_init(lexer_t* lex);
 void parser_make_header(parser_t* p, FILE* out);
@@ -435,7 +437,7 @@ void parser_read(parser_t* p);
 void parser_delete(parser_t* p);
 void set_up_builtins(void);
 char* make_label(parser_t* p, void* content);
-char* make_func_label(char* filename, ast_node_t* func);
+char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blueprint);
 
 /* emitter.c */
 

@@ -35,16 +35,17 @@ datatype_t* t_f32 = &(datatype_t){ VT_PUBLIC, DTT_F32, 4, false };
 datatype_t* t_f64 = &(datatype_t){ VT_PUBLIC, DTT_F64, 8, false };
 datatype_t* t_string = &(datatype_t){ VT_PUBLIC, DTT_STRING, 8, false };
 datatype_t* t_array = &(datatype_t){ VT_PUBLIC, DTT_ARRAY, 8, false };
+datatype_t* t_object = &(datatype_t){ VT_PUBLIC, DTT_OBJECT, 8, false };
 
 void set_up_builtins(void)
 {
     builtins = map_init(NULL, 15);
     map_put(builtins, "__builtin_i32_println", ast_builtin_init(t_void, "__builtin_i32_println",
-        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i", NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i", NULL, NULL)), NULL));
     map_put(builtins, "__builtin_f32_println", ast_builtin_init(t_void, "__builtin_f32_println",
-        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f", NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f", NULL, NULL)), NULL));
     map_put(builtins, "__builtin_string_println", ast_builtin_init(t_void, "__builtin_string_println",
-        vector_qinit(1, ast_lvar_init(t_string, NULL, "str", NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_string, NULL, "str", NULL, NULL)), NULL));
 }
 
 int precedence(int op)
@@ -70,9 +71,11 @@ int precedence(int op)
         case OP_MAGNITUDE:
             return 3;
         case OP_SUBSCRIPT:
+        case OP_SELECTION:
+        case OP_FUNC_CALL:
             return 2;
     }
-    return 8;
+    return 18;
 }
 
 datatype_t* make_unsign_type(datatype_t* dt)
@@ -143,6 +146,13 @@ bool same_datatype(parser_t* p, datatype_t* t1, datatype_t* t2)
     return t1->type == t2->type;
 }
 
+datatype_t* clone_datatype(datatype_t* dt)
+{
+    datatype_t* new = calloc(1, sizeof(datatype_t));
+    *new = *dt;
+    return new;
+}
+
 char* make_label(parser_t* p, void* content)
 {
     buffer_t* namebuffer = buffer_init(4, 2);
@@ -163,15 +173,25 @@ char* make_label(parser_t* p, void* content)
     return label;
 }
 
-char* make_func_label(char* filename, ast_node_t* func)
+char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blueprint)
 {
     buffer_t* buffer = buffer_init(15, 10);
     buffer_string(buffer, filename);
     buffer_append(buffer, '@');
-    buffer_append(buffer, 'g'); // soon different options for this
+    if (func->func_type == 'c')
+        buffer_append(buffer, 'c');
+    else if (func->func_type == 'd')
+        buffer_append(buffer, 'd');
+    else if (current_blueprint)
+    {
+        buffer_string(buffer, "b@");
+        buffer_string(buffer, current_blueprint->bp_name);
+    }
+    else
+        buffer_append(buffer, 'g');
     buffer_append(buffer, '@');
     buffer_string(buffer, func->func_name);
-    for (int i = 0; i < func->params->size; i++)
+    for (int i = current_blueprint && func->func_type != 'c' ? 1 : 0; i < func->params->size; i++)
     {
         buffer_append(buffer, '@');
         ast_node_t* param = vector_get(func->params, i);
@@ -206,17 +226,6 @@ char* make_func_label(char* filename, ast_node_t* func)
         }
     }
     return buffer_export(buffer);
-}
-
-datatype_t* make_ref_type(datatype_t* orig)
-{
-    datatype_t* dt = calloc(1, sizeof(datatype_t));
-    dt->type = DTT_REFERENCE;
-    dt->size = 8;
-    dt->visibility = VT_PRIVATE;
-    dt->usign = false;
-    dt->ref_type = orig;
-    return dt;
 }
 
 parser_t* parser_init(lexer_t* lex)
@@ -369,13 +378,30 @@ bool parser_eof(parser_t* p)
     return p->oindex >= p->lex->output->size;
 }
 
+int parser_get_kw_settings(parser_t* p, int kw)
+{
+    bool found = false;
+    switch (kw)
+    {
+        #define keyword(id, _, settings) case id: return settings;
+        #include "keywords.inc"
+        #undef keyword
+    }
+    return -1;
+}
+
 int parser_get_datatype_type(parser_t* p)
 {
     token_t* token = parser_peek(p);
     if (token == NULL)
         return -2;
     if (token_has_content(token)) // objects...?
-        return -1;
+    {
+        ast_node_t* node = map_get(p->lenv ? p->lenv : p->genv, token->content);
+        if (node->type != AST_BLUEPRINT)
+            return -1;
+        return DTT_OBJECT;
+    }
     bool found = false;
     switch (token->id)
     {
@@ -432,7 +458,7 @@ static bool parser_is_var_decl(parser_t* p)
             return false;
         if (token->type == TT_KEYWORD)
         {
-            if (parser_get_datatype_type(p) < 0)
+            if (parser_get_kw_settings(p, token->id) == 0)
                 return false;
             continue;
         }
@@ -440,6 +466,9 @@ static bool parser_is_var_decl(parser_t* p)
         {
             if (map_get_local(p->lenv ? p->lenv : p->genv, token->content))
                 return false;
+            ast_node_t* node = map_get(p->lenv ? p->lenv : p->genv, token->content);
+            if (node && node->type == AST_BLUEPRINT)
+                continue;
             break;
         }
         return false;
@@ -534,13 +563,19 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
     for (;; parser_get(p))
     {
         token_t* token = parser_peek(p);
-        if (token != NULL && token->type == TT_IDENTIFIER)
-            break;
+        if (token == NULL)
+            errorp(0, 0, "unexpected end of file while parsing datatype");
+        if (token->type == TT_IDENTIFIER)
+        {
+            ast_node_t* node = map_get(p->lenv ? p->lenv : p->genv, token->content);
+            if (!node)
+                break;
+            if (node->type != AST_BLUEPRINT)
+                break;
+        }
         if (token->id == terminator)
             break;
         datatype_type dtt = parser_get_datatype_type(p);
-        if (dtt == -2)
-            errorp(0, 0, "reached end of file while parsing datatype");
         if (dtt != -1)
         {
             dt->type = dtt;
@@ -557,6 +592,12 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
                 case DTT_LET:
                     dt->size = 4;
                     break;
+                case DTT_OBJECT:
+                {
+                    dt->size = 8;
+                    dt->name = token->content;
+                    break;
+                }
                 default:
                     dt->size = 8;
                     break;
@@ -631,11 +672,42 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
 {
     datatype_t* dt = parser_build_datatype(p, DTT_VOID, NO_TERMINATOR);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
-    ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, func_name_token->content, p->lex->filename);
+    ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, 'g', func_name_token->content, p->lex->filename);
+    if (!strcmp(func_name_token->content, "constructor"))
+    {
+        if (p->current_blueprint == NULL)
+            errorp(func_name_token->loc->row, func_name_token->loc->col, "constructor defined outside of blueprint");
+        func_node->func_type = 'c';
+        func_node->func_name = p->current_blueprint->bp_name;
+        func_node->datatype = p->current_blueprint->bp_datatype;
+        parser_ensure_cextern(p, "__builtin_alloc_bytes", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+    }
+    else if (!strcmp(func_name_token->content, "destructor"))
+    {
+        if (p->current_blueprint == NULL)
+            errorp(func_name_token->loc->row, func_name_token->loc->col, "destructor defined outside of blueprint");
+        func_node->func_type = 'd';
+        func_node->func_name = p->current_blueprint->bp_name;
+        func_node->datatype = t_void;
+    }
+    else if (p->current_blueprint)
+        func_node->func_type = 'b';
     parser_expect(p, '(');
     map_t* func_host_env = p->lenv ? p->lenv : p->genv;
     map_t* func_env = p->lenv = map_init(func_host_env, 100);
-    for (int i = 16;; i += 8)
+    bool this_arg = p->current_blueprint && func_node->func_type != 'c';
+    if (p->current_blueprint)
+    {
+        ast_node_t* this_var = map_put(p->lenv, "this", ast_lvar_init(p->current_blueprint->bp_datatype, func_name_token->loc, "this", NULL, p->lex->filename));
+        if (this_arg) // implicit this arg
+        {
+            this_var->voffset = 16;
+            vector_push(func_node->params, this_var);
+        }
+        else // constructor this
+            vector_push(func_node->local_variables, this_var);
+    }
+    for (int i = this_arg ? 24 : 16;; i += 8)
     {
         if (parser_check(p, ')'))
         {
@@ -648,12 +720,12 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         token_t* param_name_token = parser_expect_type(p, TT_IDENTIFIER);
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
-        ast_node_t* lvar = map_put(p->lenv, param_name_token->content, ast_lvar_init(pdt, param_name_token->loc, param_name_token->content, NULL));
-        lvar->lvoffset = i;
+        ast_node_t* lvar = map_put(p->lenv, param_name_token->content, ast_lvar_init(pdt, param_name_token->loc, param_name_token->content, NULL, p->lex->filename));
+        lvar->voffset = i;
         vector_push(func_node->params, lvar);
     }
     parser_expect(p, '{');
-    func_node->func_label = make_func_label(p->lex->filename, func_node);
+    func_node->func_label = make_func_label(p->lex->filename, func_node, p->current_blueprint);
     if (map_get(func_host_env, func_node->func_label))
         errorp(func_name_token->loc->row, func_name_token->loc->col, "function is identical to an already-defined function");
     map_put(func_host_env, func_node->func_label, func_node);
@@ -719,10 +791,10 @@ static bool parser_is_blueprint(parser_t* p)
         token_t* token = parser_far_peek(p, i);
         if (token == NULL)
             return false;
-        if (token->type != TT_KEYWORD)
-            return false;
         if (token->id == KW_BLUEPRINT)
             break;
+        if (token->type != TT_KEYWORD)
+            return false;
     }
     return true;
 }
@@ -752,8 +824,23 @@ static ast_node_t* parser_read_blueprint(parser_t* p)
         }
     }
 leave_loop:
+    token_t* name_token = parser_get(p);
+    if (name_token == NULL)
+        errorp(0, 0, "unexpected end of file");
+    if (!token_has_content(name_token))
+        errorp(name_token->loc->row, name_token->loc->col, "expected identifier for blueprint");
+    datatype_t* dt = clone_datatype(t_object);
+    dt->name = name_token->content;
+    ast_node_t* blueprint = ast_blueprint_init(name_token->loc, name_token->content, dt);
     parser_expect(p, '{');
-    
+    map_t* bp_host_env = p->lenv ? p->lenv : p->genv;
+    map_t* bp_env = p->lenv = map_init(bp_host_env, 100);
+    if (map_get(bp_env, name_token->content))
+        errorp(name_token->loc->row, name_token->loc->col, "symbol already exists with the name '%s'", name_token->content);
+    map_put(bp_host_env, name_token->content, blueprint);
+    ast_node_t* cbp = p->current_blueprint;
+    p->current_blueprint = blueprint;
+    int size = 0;
     for (;;)
     {
         token_t* token = parser_peek(p);
@@ -764,15 +851,33 @@ leave_loop:
             parser_get(p);
             break;
         }
+        if (parser_is_var_decl(p))
+        {
+            ast_node_t* lvar = parser_read_lvar_decl(p);
+            lvar->voffset = size;
+            size += max(2, lvar->datatype->size);
+            vector_push(p->current_blueprint->inst_variables, lvar);
+        }
+        else if (parser_is_func_definition(p))
+            vector_push(p->current_blueprint->methods, parser_read_func_definition(p));
+        else
+            errorp(token->loc->row, token->loc->col, "expected variable declaration or method definition");
     }
+    p->current_blueprint->bp_size = size;
+    p->current_blueprint = cbp;
+    p->lenv = p->lenv->parent;
+    if (p->lenv == p->genv)
+        p->lenv = NULL;
+    map_delete(bp_env);
+    return blueprint;
 }
 
 static ast_node_t* parser_read_decl(parser_t* p)
 {
-    if (parser_is_func_definition(p))
-        return parser_read_func_definition(p);
     if (parser_is_blueprint(p))
         return parser_read_blueprint(p);
+    if (parser_is_func_definition(p))
+        return parser_read_func_definition(p);
     return NULL;
 }
 
@@ -782,7 +887,7 @@ static ast_node_t* parser_read_lvar_decl(parser_t* p)
     token_t* var_name_token = parser_expect_type(p, TT_IDENTIFIER);
     bool init = parser_check(p, OP_ASSIGN);
     ast_node_t* var_node = map_put(p->lenv ? p->lenv : p->genv, var_name_token->content,
-        ast_lvar_init(dt, var_name_token->loc, var_name_token->content, NULL));
+        ast_lvar_init(dt, var_name_token->loc, var_name_token->content, NULL, p->lex->filename));
     if (parser_check(p, OP_ASSIGN))
     {
         parser_unget(p);
@@ -886,15 +991,19 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
                 vector_push(p->userexterns, map_put(p->genv, token->content, builtin));
                 map_put(p->funcs, token->content, builtin);
             }
-            else
-            {
-                vector_t* unspecific_vec = map_get(p->funcs, token->content);
-                if (!unspecific_vec)
-                    vector_push(expr_result, token);
-            }
+            vector_push(expr_result, token);
         }
-        else if (token->id == '(' || token->id == '[')
+        else if (token->id == '(')
+        {
+            token_t* prev = parser_far_peek(p, -1);
+            if (prev != NULL && prev->type == TT_IDENTIFIER && map_get(p->funcs, prev->content))
+            {
+                if (vector_top(stack) != NULL && ((token_t*) vector_top(stack))->id == OP_SELECTION)
+                    vector_push(expr_result, vector_pop(stack));
+                vector_push(stack, id_token_init(TT_KEYWORD, OP_FUNC_CALL, token->loc->offset, token->loc->row, token->loc->col));
+            }
             vector_push(stack, token);
+        }
         else if (token->id == ')' || token->id == ',' || token->id == ']')
         {
             while (vector_top(stack) != NULL && ((token_t*) vector_top(stack))->id != '(')
@@ -907,8 +1016,6 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
                     parser_unget(p);
                     break;
                 }
-                token_t* call = vector_pop(calls);
-                if (call) vector_push(expr_result, call);
             }
             if (token->id == ']' && terminator == ']' && (vector_top(stack) == NULL || ((token_t*) vector_top(stack))->id != '['))
             {
@@ -969,20 +1076,6 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
                 vector_push(expr_result, vector_pop(stack));
             vector_push(stack, token);
         }
-        token_t* peek = parser_peek(p);
-        if (peek != NULL && peek->id == KW_LPAREN)
-        {
-            if (token->type == TT_IDENTIFIER)
-            {
-                vector_t* unspecified_vec = map_get(p->funcs, token->content);
-                if (unspecified_vec)
-                    vector_push(calls, token);
-                else
-                    vector_push(calls, NULL);
-            }
-            else
-                vector_push(calls, NULL);
-        }
     }
     while (vector_top(stack) != NULL)
         vector_push(expr_result, vector_pop(stack));
@@ -997,6 +1090,7 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
     vector_clear(stack, RETAIN_OLD_CAPACITY);
     if (!expr_result->size)
         errorp(parser_peek(p)->loc->row, parser_peek(p)->loc->col, "null statement is not allowed");
+    printf("----- results: (size %i)\n", expr_result->size);
     for (int i = 0; i < expr_result->size; i++)
     {
         token_t* token = (token_t*) vector_get(expr_result, i);
@@ -1005,8 +1099,9 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
         else if (token->type == TT_DATATYPE)
             printf("result[%i] = %i\n", i, token->dt->type);
         else
-            printf("result[%i] = %c\n", i, token->id);
+            printf("result[%i] = %c (id: %i)\n", i, token->id, token->id);
     }
+    printf("----- end results\n");
     for (int i = 0; i < expr_result->size; i++)
     {
         token_t* token = (token_t*) vector_get(expr_result, i);
@@ -1023,43 +1118,29 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                 vector_t* flavors = map_get(p->funcs, token->content);
                 if (!flavors)
                 {
+                    if (i + 1 < expr_result->size && ((token_t*) vector_get(expr_result, i + 1))->id == OP_SELECTION)
+                    {
+                        ast_node_t* top = vector_top(stack);
+                        ast_node_t* blueprint = map_get(p->lenv ? p->lenv : p->genv, top->datatype->name);
+                        for (int i = 0; i < blueprint->inst_variables->size; i++)
+                        {
+                            ast_node_t* inst_var = vector_get(blueprint->inst_variables, i);
+                            if (!strcmp(inst_var->var_name, token->content))
+                            {
+                                vector_push(stack, inst_var);
+                                goto inst_var_success;
+                            }
+                        }
+                    } 
                     vector_push(stack, ast_get_by_token(p, token));
+inst_var_success:
                     continue;
                 }
-
-                for (int i = 0; i < flavors->size; i++)
-                {
-                    ast_node_t* flavor = vector_get(flavors, i);
-                    for (int j = 0; j < flavor->params->size && vector_check_bounds(stack, stack->size - flavor->params->size + j); j++)
-                    {
-                        ast_node_t* param = vector_get(flavor->params, j);
-                        if (!same_datatype(p, param->datatype, ((ast_node_t*) vector_get(stack, stack->size - flavor->params->size + j))->datatype))
-                            goto try_again;
-                    }
-                    found = flavor;
-                    break;
-try_again:
-                }
+                vector_push(stack, vector_get(flavors, 0));
+                continue;
             }
             else
-                found = builtin;
-            if (!found)
-                errorp(token->loc->row, token->loc->col, "could not find a function by the name of '%s' that matched the specified args", token->content);
-            if (found->residing != NULL && strcmp(p->lex->filename, found->residing) && found->datatype->visibility != VT_PUBLIC)
-                errorp(token->loc->row, token->loc->col, "can't call a function that's private to '%s'", found->residing);
-            vector_t* args = vector_init(found->params->size, 1);
-            args->size = found->params->size;
-            for (int i = 0; i < found->params->size; i++)
-            {
-                ast_node_t* arg = vector_pop(stack), * param = vector_get(found->params, i);
-                if (!arg)
-                    errorp(token->loc->row, token->loc->col, "function %s expected %i parameters, got %i", found->func_name, found->params->size, i);
-                if (arg->datatype->type == param->datatype->type)
-                    args->data[found->params->size - 1 - i] = arg;
-                else
-                    args->data[found->params->size - 1 - i] = ast_cast_init(param->datatype, arg->loc, arg);
-            }
-            vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, args));
+                vector_push(stack, builtin);
             continue;
         }
         if (token->type == TT_KEYWORD)
@@ -1098,6 +1179,15 @@ try_again:
                     vector_push(stack, ast_binary_op_init(token->id, symbol->datatype->array_type, token->loc, symbol, index));
                     break;
                 }
+                case OP_SELECTION:
+                {
+                    ast_node_t* member = vector_pop(stack);
+                    ast_node_t* obj = vector_pop(stack);
+                    if (!member || !obj)
+                        errorp(token->loc->row, token->loc->col, "expected 2 operands for selection operator");
+                    vector_push(stack, ast_binary_op_init(token->id, member->datatype, token->loc, obj, member));
+                    break;
+                }
                 case OP_MAGNITUDE:
                 {
                     ast_node_t* operand = vector_pop(stack);
@@ -1130,12 +1220,97 @@ try_again:
                     parser_ensure_cextern(p, "__builtin_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                     break;
                 }
+                case OP_FUNC_CALL:
+                {
+                    /*
+                    printf("----- stack: \n");
+                    for (int i = stack->size - 1; i >= 0; i--)
+                        ast_print(vector_get(stack, i));
+                    printf("-----\n");
+                    */
+                    ast_node_t* random_flavor = NULL;
+                    ast_node_t* obj = NULL;
+                    for (int i = stack->size - 1; i >= 0; i--)
+                    {
+                        ast_node_t* node = vector_get(stack, i);
+                        if (node->type == AST_FUNC_DEFINITION)
+                        {
+                            random_flavor = node;
+                            break;
+                        }
+                        if (node->type == OP_SELECTION && node->rhs->type == AST_FUNC_DEFINITION)
+                        {
+                            random_flavor = node->rhs;
+                            obj = node->lhs;
+                            break;
+                        }
+                    }
+                    if (!random_flavor)
+                        errorp(token->loc->row, token->loc->col, "no function name provided for function call");
+                    vector_t* flavors = map_get(p->funcs, random_flavor->func_name);
+                    ast_node_t* found = NULL;
+                    if (!random_flavor->extrn)
+                    {
+                        for (int i = 0; i < flavors->size; i++)
+                        {
+                            ast_node_t* flavor = vector_get(flavors, i);
+                            bool thisless = flavor->func_type == 'g' || flavor->func_type == 'c';
+                            int thisless_size = flavor->params->size - (thisless ? 0 : 1);
+                            for (int j = thisless ? 0 : 1; j < flavor->params->size && vector_check_bounds(stack, stack->size - thisless_size + j); j++)
+                            {
+                                ast_node_t* param = vector_get(flavor->params, j);
+                                if (!same_datatype(p, param->datatype, ((ast_node_t*) vector_get(stack, stack->size - thisless_size + j))->datatype))
+                                    goto try_again;
+                            }
+                            found = flavor;
+                            break;
+try_again:
+                        }
+                    }
+                    else
+                        found = random_flavor;
+found_function:
+                    if (!found)
+                        errorp(token->loc->row, token->loc->col, "could not find a function by the name of '%s' that matched the specified args", token->content);
+                    printf("found: %s\n", found->func_label);
+                    if (found->residing != NULL && strcmp(p->lex->filename, found->residing) && found->datatype->visibility != VT_PUBLIC)
+                        errorp(token->loc->row, token->loc->col, "can't call a function that's private to '%s'", found->residing);
+                    vector_t* args = vector_init(found->params->size, 1);
+                    args->size = found->params->size;
+                    bool thisless = found->func_type == 'g' || found->func_type == 'c';
+                    int thisless_offset = !thisless ? 1 : 0;
+                    // add(p, 5, 3)
+                    // add(5, 3)
+                    for (int i = found->params->size - 1; i >= thisless_offset; i--)
+                    {
+                        ast_node_t* arg = vector_pop(stack), * param = vector_get(found->params, i);
+                        if (!arg)
+                            errorp(token->loc->row, token->loc->col, "function %s expected %i parameters, got %i", found->func_name, found->params->size, i);
+                        if (arg->datatype->type == param->datatype->type)
+                            args->data[i] = arg;
+                        else
+                            args->data[i] = ast_cast_init(param->datatype, arg->loc, arg);
+                    }
+                    if (!thisless)
+                        args->data[0] = obj;
+                    vector_pop(stack); // pop func name
+                    vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, args));
+                    break;
+                }
             }
         }
     }
     if (!stack->size)
+    {
+        printf("-- end of stack trace -\n");
+        for (int i = 0; i < stack->size; i++)
+            ast_print(vector_get(stack, i));
+        printf("-^^^- stack trace -^^^-\n");
         errorp(0, 0, "dev error: you messed up with the stack goofball");
+    }
     ast_node_t* top = (ast_node_t*) vector_top(stack);
+    printf("exporting: \n");
+    ast_print(top);
     vector_delete(stack);
     vector_delete(expr_result);
     return top;

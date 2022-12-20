@@ -57,7 +57,7 @@ vector_t* build(char* path)
     header[pathl] = 'h';
     header[pathl + 1] = '\0';
     FILE* hout = fopen(header, "wb");
-    parser_make_header(parser, hout);
+    //parser_make_header(parser, hout); // don't generate header rn cuz 
     fclose(hout);
     free(header);
     char* assembly = calloc(pathl + 1, sizeof(char));

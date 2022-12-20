@@ -1,16 +1,27 @@
 blueprint point
 {
-    private i32 x;
-    private i32 y;
+    public x;
+    public y;
 
-    public constructor(i32 x, i32 y)
+    public constructor(x, y)
     {
         this.x = x;
         this.y = y;
+    }
+
+    public add(delta)
+    {
+        this.x += delta;
+        this.y += delta;
     }
 }
 
 i32 main()
 {
-    point p = make point(5, 3);
+    point p = point(5, 3);
+    __builtin_i32_println(p.x);
+    __builtin_i32_println(p.y);
+    p.add(5);
+    __builtin_i32_println(p.x);
+    __builtin_i32_println(p.y);
 }

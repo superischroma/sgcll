@@ -53,7 +53,7 @@
 			},
 			{
 				"name": "constant.language.sgcll",
-				"match": "\\b(public|private|protected|unsigned|let|void|bool|i8|i16|i32|i64|f32|f64|lower|string|blueprint|constructor|destructor|this)\\b"
+				"match": "\\b(public|private|protected|unsigned|let|void|bool|i8|i16|i32|i64|f32|f64|lowlvl|string|blueprint|constructor|destructor|this)\\b"
 			}]
 		},
 		"strings": {

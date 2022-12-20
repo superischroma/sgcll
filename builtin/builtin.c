@@ -75,6 +75,11 @@ void __builtin_string_println(char* str)
     WriteFile(GetStdHandle((DWORD) -11), "\n", 1, 0, NULL);
 }
 
+void* __builtin_alloc_bytes(size_t amount)
+{
+    return HeapAlloc(GetProcessHeap(), 0, amount);
+}
+
 void* __builtin_dynamic_array(size_t length, size_t element_width)
 {
     char* array = HeapAlloc(GetProcessHeap(), 0, length * element_width + 1);

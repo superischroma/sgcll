@@ -1,6 +1,6 @@
 //namespace io;
 
-//public lower print(string str);
+//public lowlvl print(string str);
 
 public print(string str)
 {
