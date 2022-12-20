@@ -6,12 +6,18 @@
 #include "sgcllc.h"
 
 #define NO_TERMINATOR -2
+
+typedef struct 
+{
+    int operator;
+    bool lowlvl;
+} header_plus_t;
     
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
 int parser_get_datatype_type(parser_t* p);
 static bool parser_is_func_definition(parser_t* p);
 static bool parser_is_var_decl(parser_t* p);
-static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator);
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator, header_plus_t* additional);
 static ast_node_t* parser_read_import(parser_t* p);
 static ast_node_t* parser_read_func_definition(parser_t* p);
 static void parser_read_func_body(parser_t* p);
@@ -142,7 +148,8 @@ bool same_datatype(parser_t* p, datatype_t* t1, datatype_t* t2)
 {
     if (!t1 || !t2)
         return false;
-    // this function exists so that object checks can be performed soon
+    if (t1->type == DTT_OBJECT && t2->type == DTT_OBJECT)
+        return !strcmp(t1->name, t2->name);
     return t1->type == t2->type;
 }
 
@@ -205,7 +212,8 @@ char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blue
             case DTT_I64: buffer_string(buffer, "i64"); break; \
             case DTT_F32: buffer_string(buffer, "f32"); break; \
             case DTT_F64: buffer_string(buffer, "f64"); break; \
-            case DTT_STRING: buffer_string(buffer, "string"); break
+            case DTT_STRING: buffer_string(buffer, "string"); break; \
+            case DTT_OBJECT: buffer_string(buffer, dt->name); break
         switch (dt->type)
         {
             types;
@@ -553,8 +561,13 @@ static ast_node_t* parser_read_for_statement(parser_t* p)
     return for_stmt;
 }
 
-static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator)
+static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator, header_plus_t* additional)
 {
+    if (additional)
+    {
+        additional->operator = -1;
+        additional->lowlvl = false;
+    }
     datatype_t* dt = calloc(1, sizeof(datatype_t));
     dt->visibility = VT_PRIVATE;
     dt->usign = false;
@@ -614,6 +627,17 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
             case KW_UNSIGNED:
                 dt->usign = true;
                 break;
+            case KW_OPERATOR:
+            {
+                printf("operator tag: %i\n", parser_get(p)->id);
+                if (!additional)
+                    errorp(token->loc->row, token->loc->col, "operator overload only allowed on functions");
+                token_t* operator = parser_peek(p);
+                if (!operator || operator->type != TT_KEYWORD)
+                    errorp(token->loc->row, token->loc->col, "expected operator type after operator specifier");
+                additional->operator = operator->id;
+                break;
+            }
             case KW_LBRACK:
             {
                 parser_get(p);
@@ -670,9 +694,12 @@ static ast_node_t* parser_read_import(parser_t* p)
 
 static ast_node_t* parser_read_func_definition(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p, DTT_VOID, NO_TERMINATOR);
+    header_plus_t* hp = calloc(1, sizeof(header_plus_t));
+    datatype_t* dt = parser_build_datatype(p, DTT_VOID, NO_TERMINATOR, hp);
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, 'g', func_name_token->content, p->lex->filename);
+    func_node->operator = hp->operator;
+    func_node->lowlvl = hp->lowlvl;
     if (!strcmp(func_name_token->content, "constructor"))
     {
         if (p->current_blueprint == NULL)
@@ -716,7 +743,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         }
         if (parser_check(p, ','))
             parser_get(p);
-        datatype_t* pdt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR);
+        datatype_t* pdt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR, NULL);
         token_t* param_name_token = parser_expect_type(p, TT_IDENTIFIER);
         if (!parser_check(p, ')') && !parser_check(p, ','))
             parser_expect(p, ')');
@@ -883,7 +910,7 @@ static ast_node_t* parser_read_decl(parser_t* p)
 
 static ast_node_t* parser_read_lvar_decl(parser_t* p)
 {
-    datatype_t* dt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR);
+    datatype_t* dt = parser_build_datatype(p, DTT_I32, NO_TERMINATOR, NULL);
     token_t* var_name_token = parser_expect_type(p, TT_IDENTIFIER);
     bool init = parser_check(p, OP_ASSIGN);
     ast_node_t* var_node = map_put(p->lenv ? p->lenv : p->genv, var_name_token->content,
@@ -1038,7 +1065,7 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
                     break;
                 }
             }
-            datatype_t* type = parser_build_datatype(p, DTT_VOID, terminator);
+            datatype_t* type = parser_build_datatype(p, DTT_VOID, terminator, NULL);
             if (type == NULL)
                 errorp(token->loc->row, token->loc->col, "unexpected end of file");
             for (;;)
@@ -1167,6 +1194,33 @@ inst_var_success:
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
                     if (lhs->datatype->type == DTT_LET) lhs->datatype = rhs->datatype;
                     if (rhs->type == AST_MAKE) lhs->datatype = rhs->datatype;
+                    if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT ||
+                        lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING))
+                    {
+                        vector_t* keys = map_keys(p->genv);
+                        ast_node_t* found = NULL;
+                        for (int i = 0; i < keys->size; i++)
+                        {
+                            ast_node_t* node = map_get(p->genv, vector_get(keys, i));
+                            if (node->type != AST_FUNC_DEFINITION)
+                                continue;
+                            if (node->params->size != 2)
+                                continue;
+                            ast_node_t* func_lhs = vector_get(node->params, 0);
+                            ast_node_t* func_rhs = vector_get(node->params, 1);
+                            if (node->operator == token->id && same_datatype(p, lhs->datatype, func_lhs->datatype) &&
+                                same_datatype(p, rhs->datatype, func_rhs->datatype))
+                            {
+                                found = node;
+                                break;
+                            }
+                        }
+                        vector_delete(keys);
+                        if (!found)
+                            errorp(token->loc->row, token->loc->col, "no operator overload available for the specified arguments");
+                        vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, vector_qinit(2, lhs, rhs)));
+                        break;
+                    }
                     vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
                     break;
                 }

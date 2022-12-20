@@ -1,0 +1,29 @@
+blueprint point
+{
+    public x;
+    public y;
+
+    public constructor(x, y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+public operator + point add(point p, i32 delta)
+{
+    point np = point(p.x, p.y);
+    np.x += delta;
+    np.y += delta;
+    return np;
+}
+
+i32 main()
+{
+    point p = point(5, 3);
+    __builtin_i32_println(p.x);
+    __builtin_i32_println(p.y);
+    point np = p + 5;
+    __builtin_i32_println(np.x);
+    __builtin_i32_println(np.y);
+}

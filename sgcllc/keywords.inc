@@ -27,6 +27,7 @@ keyword(KW_PUBLIC, "public", 0b10)
 keyword(KW_PROTECTED, "protected", 0b10)
 keyword(KW_UNSIGNED, "unsigned", 0b10)
 keyword(KW_BLUEPRINT, "blueprint", 0b00)
+keyword(KW_OPERATOR, "operator", 0b10)
 
 // operators
 keyword(OP_ASSIGN_ADD, "+=", 0b00)

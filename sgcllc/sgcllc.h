@@ -233,7 +233,9 @@ typedef struct ast_node_t
             vector_t* params;
             vector_t* local_variables;
             bool extrn;
+            bool lowlvl;
             struct ast_node_t* body;
+            int operator;
         };
         // AST_FUNC_CALL
         struct
