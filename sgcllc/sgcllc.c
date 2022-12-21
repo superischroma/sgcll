@@ -24,7 +24,6 @@ bool chk_extension(char* path, int len)
         return false;
     for (int i = sizeof(extension) - 2, j = 1; i >= 0; i--, j++)
     {
-        printf("%c = %c", path[len - j], extension[i]);
         if (path[len - j] != extension[i])
             return false;
     }
@@ -57,7 +56,7 @@ vector_t* build(char* path)
     header[pathl] = 'h';
     header[pathl + 1] = '\0';
     FILE* hout = fopen(header, "wb");
-    //parser_make_header(parser, hout); // don't generate header rn cuz 
+    parser_make_header(parser, hout); // don't generate header rn cuz 
     fclose(hout);
     free(header);
     char* assembly = calloc(pathl + 1, sizeof(char));

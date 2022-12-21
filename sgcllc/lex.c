@@ -88,9 +88,7 @@ void lex_read_token(lexer_t* lex)
             }
             for (int signature = 0;;)
             {
-                printf("current: %c\n", c);
                 int c = lex_peek(lex);
-                printf("next: %c\n", c);
                 if ((c < '0' || c > '9') && c != '.')
                 {
                     if (c == 'f' ||

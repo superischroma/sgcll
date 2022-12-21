@@ -5,63 +5,155 @@
 #include "sgcllc.h"
 
 #define write(c) fputc(c, out)
-#define writei16(c) fwrite(&c, sizeof(short), 1, out);
+#define writei16(c) fwrite(&c, sizeof(short), 1, out)
+#define writei32(c) fwrite(&c, sizeof(int), 1, out)
 #define writestr(str) impl_writestr(str, out)
+#define writedt(dt) impl_writedt(dt, out)
+#define writefunc(func) impl_writefunc(func, out)
 
 #define read impl_read(in)
 #define readi16 impl_readi16(in)
+#define readi32 impl_readi32(in)
 #define readstr impl_readstr(in)
+#define readdt impl_readdt(in)
+#define readfunc(bp) impl_readfunc(in, filename, ident, bp)
 
-void impl_writestr(char* str, FILE* out)
+static void impl_writestr(char* str, FILE* out)
 {
     fwrite(str, sizeof(char), strlen(str), out);
     fputc('\0', out);
 }
 
-void writetype(FILE* out, ast_node_t* node)
+static void impl_writedt(datatype_t* dt, FILE* out)
 {
-    if (node->datatype->name)
-        write(0x01);
+    write(dt->visibility);
+    if (dt->type == DTT_ARRAY)
+    {
+        datatype_t* current = dt;
+        while (dt->array_type)
+            current = dt->array_type;
+        write(current->type);
+    }
     else
-        write(0x00);
-    if (node->datatype->name)
-        writestr(node->datatype->name);
-    else
-        write(node->datatype->type);
-    write(node->datatype->visibility);
-    write(node->datatype->usign);
+        write(dt->type);
+    write(dt->size);
+    write(dt->usign);
+    if (dt->type == DTT_OBJECT && dt->name)
+        writestr(dt->name);
+    if (dt->type == DTT_ARRAY)
+        write(dt->depth);
 }
 
-char impl_read(FILE* in)
+static void impl_writefunc(ast_node_t* func, FILE* out)
+{
+    writedt(func->datatype);
+    write(func->func_type);
+    write(func->lowlvl);
+    writei16(func->operator);
+    writei16(func->params->size);
+    for (int i = 0; i < func->params->size; i++)
+    {
+        ast_node_t* param = vector_get(func->params, i);
+        writestr(param->var_name);
+        writedt(param->datatype);
+    }
+}
+
+static char impl_read(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file: %i", __LINE__);
+        errorc("corrupted header file (line %i)", __LINE__);
     char c;
     fread(&c, sizeof(char), 1, in);
     return c;
 }
 
-short impl_readi16(FILE* in)
+static short impl_readi16(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file: %i", __LINE__);
+        errorc("corrupted header file (line %i)", __LINE__);
     short s;
     fread(&s, sizeof(short), 1, in);
     return s;
 }
 
-char* impl_readstr(FILE* in)
+static int impl_readi32(FILE* in)
 {
     if (feof(in))
-        errorc("corrupted header file: %i", __LINE__);
+        errorc("corrupted header file (line %i)", __LINE__);
+    int i;
+    fread(&i, sizeof(int), 1, in);
+    return i;
+}
+
+static char* impl_readstr(FILE* in)
+{
+    if (feof(in))
+        errorc("corrupted header file (line %i)", __LINE__);
     buffer_t* buffer = buffer_init(1024, 64);
     for (char c = fgetc(in); c; c = fgetc(in))
     {
         buffer_append(buffer, c);
-        if (feof(in)) errorc("corrupted header file: %i", __LINE__);
+        if (feof(in)) errorc("corrupted header file (line %i)", __LINE__);
     }
     buffer_append(buffer, '\0');
     return buffer_export(buffer);
+}
+
+static datatype_t* impl_readdt(FILE* in)
+{
+    char visibility = read;
+    char dtt = read;
+    char size = read;
+    char usign = read;
+    char* name = NULL;
+    char depth = 0;
+    if (dtt == DTT_OBJECT)
+        name = readstr;
+    if (dtt == DTT_ARRAY)
+        depth = read;
+    datatype_t* dt = calloc(1, sizeof(datatype_t));
+    dt->visibility = visibility;
+    dt->type = dtt;
+    dt->size = size;
+    dt->usign = usign;
+    dt->name = name;
+    dt->depth = 0;
+    for (int i = 0; i < depth; i++)
+    {
+        datatype_t* array = calloc(1, sizeof(datatype_t));
+        array->visibility = visibility;
+        array->type = DTT_ARRAY;
+        array->size = 8;
+        array->usign = false;
+        array->name = NULL;
+        array->depth = i + 1;
+        array->array_type = dt;
+        dt = array;
+    }
+    return dt;
+}
+
+static ast_node_t* impl_readfunc(FILE* in, char* filename, char* ident, ast_node_t* bp)
+{
+    datatype_t* rettype = readdt;
+    char func_type = read;
+    char lowlvl = read;
+    short operator = readi16;
+    short arg_count = readi16;
+    vector_t* args = vector_init(arg_count, 1);
+    for (int i = 0; i < arg_count; i++)
+    {
+        char* name = readstr;
+        datatype_t* dt = readdt;
+        vector_push(args, ast_lvar_init(dt, NULL, name, NULL, filename));
+    }
+    ast_node_t* node = ast_builtin_init(rettype, ident, args, filename, 'u');
+    node->func_type = func_type;
+    node->lowlvl = lowlvl;
+    node->operator = operator;
+    node->func_label = make_func_label(filename, node, bp);
+    return node;
 }
 
 // wb mode on fopen for this function
@@ -70,32 +162,56 @@ void write_header(FILE* out, map_t* genv)
     for (int i = 0; i < genv->capacity; i++)
     {
         char* key = genv->key[i];
-        if (key == NULL)
+        if (!key)
             continue;
         ast_node_t* node = genv->value[i];
-        if (node->type == AST_GVAR)
-            write(0x00);
-        else if (node->type == AST_FUNC_DEFINITION)
+        if (!node)
+            continue;
+        if (node->type == AST_FUNC_DEFINITION && node->extrn)
+            continue;
+        writei16(node->type);
+        switch (node->type)
         {
-            if (node->extrn)
-                continue;
-            write(0x01);
-        }
-        else
-            errorc("expected global variable or function definition for header output, got %i", node->type);
-        writetype(out, node);
-        if (node->type == AST_GVAR)
-            writestr(node->var_name);
-        else
-            writestr(node->func_name);
-        if (node->type == AST_FUNC_DEFINITION)
-        {
-            writei16(node->params->size);
-            for (int i = 0; i < node->params->size; i++)
+            case AST_GVAR:
             {
-                ast_node_t* arg = vector_get(node->params, i);
-                writetype(out, arg);
-                writestr(arg->var_name);
+                writestr(node->var_name);
+                break;
+            }
+            case AST_FUNC_DEFINITION:
+            {
+                writestr(node->func_name);
+                break;
+            }
+            case AST_BLUEPRINT:
+            {
+                writestr(node->bp_name);
+                break;
+            }
+        }
+        writedt(node->datatype);
+        switch (node->type)
+        {
+            case AST_FUNC_DEFINITION:
+                writefunc(node);
+                break;
+            case AST_BLUEPRINT:
+            {
+                write(node->bp_datatype->visibility);
+                writei32(node->bp_size);
+                writei16(node->inst_variables->size);
+                for (int i = 0; i < node->inst_variables->size; i++)
+                {
+                    ast_node_t* inst_var = vector_get(node->inst_variables, i);
+                    writestr(inst_var->var_name);
+                    writedt(inst_var->datatype);
+                }
+                writei16(node->methods->size);
+                for (int i = 0; i < node->methods->size; i++)
+                {
+                    ast_node_t* method = vector_get(node->methods, i);
+                    writestr(method->func_name);
+                    writefunc(method);
+                }
             }
         }
     }
@@ -103,71 +219,63 @@ void write_header(FILE* out, map_t* genv)
 
 vector_t* read_header(FILE* in, char* filename)
 {
-    #define make_datatype \
-        datatype_t* dt = calloc(1, sizeof(datatype_t)); \
-        dt->visibility = vis; \
-        dt->usign = usign; \
-        if (type_storage == 0x00) \
-            dt->type = dtt; \
-        else \
-        { \
-            errorc("objects don't exist, errored on: %i", type_storage); \
-        } \
-        switch (dt->type) \
-        { \
-            case DTT_VOID: dt->size = 0; break; \
-            case DTT_I8: \
-            case DTT_BOOL: \
-                dt->size = 1; \
-                break; \
-            case DTT_I16: dt->size = 2; break; \
-            case DTT_I32: \
-            case DTT_F32: \
-            case DTT_LET: \
-                dt->size = 4; \
-                break; \
-            default: \
-                dt->size = 8; \
-                break; \
-        }
-    vector_t* vec = vector_init(5, 5);
+    vector_t* decls = vector_init(25, 10);
     for (;;)
     {
-        ast_node_type decl_type = fgetc(in);
-        if (decl_type == EOF)
+        short decl_type;
+        if (fread(&decl_type, sizeof(short), 1, in) < 1)
             break;
-        char type_storage = read;
-        char dtt, * nametype;
-        if (type_storage == 0x00)
-            dtt = read;
-        else
-            nametype = readstr;
-        visibility_type vis = read;
-        bool usign = read;
-        char* name = readstr;
-        if (decl_type == 0x00)
-            errorc("global variables do not exist yet");
-        else if (decl_type == 0x01)
+        char* ident = readstr;
+        datatype_t* dt = readdt;
+        switch (decl_type)
         {
-            make_datatype;
-            ast_node_t* func_node = vector_push(vec, ast_builtin_init(dt, name, vector_init(5, 5), filename));
-            short param_count = readi16;
-            for (int i = 0; i < param_count; i++)
+            case AST_FUNC_DEFINITION:
             {
-                char type_storage = read;
-                char dtt, * nametype;
-                if (type_storage == 0x00)
-                    dtt = read;
-                else
-                    nametype = readstr;
-                visibility_type vis = read;
-                bool usign = read;
-                char* name = readstr;
-                make_datatype;
-                vector_push(func_node->params, ast_lvar_init(dt, NULL, name, NULL, filename));
+                vector_push(decls, readfunc(NULL));
+                break;
             }
-            func_node->func_label = make_func_label(filename, func_node, NULL);
+            case AST_BLUEPRINT:
+            {
+                char visibility = read;
+                int size = readi32;
+                short inst_var_count = readi16;
+                ast_node_t* bp = vector_push(decls, ast_blueprint_init(NULL, ident, NULL));
+                vector_t* inst_vars = vector_init(10, 5);
+                for (int i = 0; i < inst_var_count; i++)
+                {
+                    char* ident = readstr;
+                    datatype_t* dt = readdt;
+                    vector_push(inst_vars, ast_lvar_init(dt, NULL, ident, NULL, filename));
+                }
+                short method_count = readi16;
+                vector_t* methods = vector_init(10, 5);
+                for (int i = 0; i < methods->size; i++)
+                {
+                    char* ident = readstr;
+                    vector_push(methods, readfunc(bp));
+                }
+                datatype_t* dt = calloc(1, sizeof(datatype_t));
+                dt->array_type = NULL;
+                dt->depth = 0;
+                dt->length = NULL;
+                dt->name = ident;
+                dt->size = 8;
+                dt->type = DTT_OBJECT;
+                dt->usign = false;
+                dt->visibility = visibility;
+                bp->bp_datatype = dt;
+                bp->inst_variables = inst_vars;
+                bp->methods = methods;
+                bp->bp_size = size;
+                vector_push(decls, bp);
+                break;
+            }
+            case AST_GVAR:
+            {
+                errorc(0, 0, "tell dev to add global variables lol");
+                break;
+            }
         }
     }
-    return vec;
+    return decls;
 }

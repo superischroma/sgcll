@@ -47,11 +47,11 @@ void set_up_builtins(void)
 {
     builtins = map_init(NULL, 15);
     map_put(builtins, "__builtin_i32_println", ast_builtin_init(t_void, "__builtin_i32_println",
-        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i", NULL, NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i", NULL, NULL)), NULL, 'b'));
     map_put(builtins, "__builtin_f32_println", ast_builtin_init(t_void, "__builtin_f32_println",
-        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f", NULL, NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f", NULL, NULL)), NULL, 'b'));
     map_put(builtins, "__builtin_string_println", ast_builtin_init(t_void, "__builtin_string_println",
-        vector_qinit(1, ast_lvar_init(t_string, NULL, "str", NULL, NULL)), NULL));
+        vector_qinit(1, ast_lvar_init(t_string, NULL, "str", NULL, NULL)), NULL, 'b'));
 }
 
 int precedence(int op)
@@ -253,7 +253,7 @@ parser_t* parser_init(lexer_t* lex)
     p->funcs = map_init(NULL, 50);
     p->entry = "main";
     vector_push(p->cexterns, ast_builtin_init(t_void, "__builtin_init",
-        vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA), NULL));
+        vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA), NULL, 'b'));
     return p;
 }
 
@@ -271,7 +271,7 @@ static void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vecto
         vector_delete(args);
         return;
     }
-    map_put(p->genv, name, vector_push(p->cexterns, ast_builtin_init(dt, name, args, NULL)));
+    map_put(p->genv, name, vector_push(p->cexterns, ast_builtin_init(dt, name, args, NULL, 'b')));
 }
 
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
@@ -629,7 +629,6 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
                 break;
             case KW_OPERATOR:
             {
-                printf("operator tag: %i\n", parser_get(p)->id);
                 if (!additional)
                     errorp(token->loc->row, token->loc->col, "operator overload only allowed on functions");
                 token_t* operator = parser_peek(p);
@@ -684,7 +683,6 @@ static ast_node_t* parser_read_import(parser_t* p)
         }
         else if (node->type == AST_GVAR)
             name = node->var_name;
-        ast_print(node);
         printf("included symbol from %s: %s\n", filename, name);
         map_put(p->genv, name, vector_push(p->userexterns, node));
     }
@@ -700,6 +698,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
     ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, 'g', func_name_token->content, p->lex->filename);
     func_node->operator = hp->operator;
     func_node->lowlvl = hp->lowlvl;
+    free(hp);
     if (!strcmp(func_name_token->content, "constructor"))
     {
         if (p->current_blueprint == NULL)
@@ -1002,10 +1001,12 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
         token_t* token = parser_get(p);
         if (token == NULL)
             errorp(0, 0, "unexpected end of file");
+        /*
         if (token_has_content(token))
             printf("token: %s\n", token->content);
         else
             printf("token: %c\n", token->id);
+        */
         if (token->id == ';' && terminator == ';')
             break;
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
@@ -1276,12 +1277,6 @@ inst_var_success:
                 }
                 case OP_FUNC_CALL:
                 {
-                    /*
-                    printf("----- stack: \n");
-                    for (int i = stack->size - 1; i >= 0; i--)
-                        ast_print(vector_get(stack, i));
-                    printf("-----\n");
-                    */
                     ast_node_t* random_flavor = NULL;
                     ast_node_t* obj = NULL;
                     for (int i = stack->size - 1; i >= 0; i--)
@@ -1303,7 +1298,7 @@ inst_var_success:
                         errorp(token->loc->row, token->loc->col, "no function name provided for function call");
                     vector_t* flavors = map_get(p->funcs, random_flavor->func_name);
                     ast_node_t* found = NULL;
-                    if (!random_flavor->extrn)
+                    if (random_flavor->extrn != 'b')
                     {
                         for (int i = 0; i < flavors->size; i++)
                         {
@@ -1363,8 +1358,6 @@ found_function:
         errorp(0, 0, "dev error: you messed up with the stack goofball");
     }
     ast_node_t* top = (ast_node_t*) vector_top(stack);
-    printf("exporting: \n");
-    ast_print(top);
     vector_delete(stack);
     vector_delete(expr_result);
     return top;

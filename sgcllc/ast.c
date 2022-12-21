@@ -43,7 +43,7 @@ ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_
         .func_type = func_type,
         .func_name = func_name,
         .residing = residing,
-        .extrn = false,
+        .extrn = '\0',
         .params = vector_init(10, 3),
         .local_variables = vector_init(10, 5),
         .body = ast_block_init(loc)
@@ -58,14 +58,14 @@ ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func
     });
 }
 
-ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing)
+ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing, char extrn)
 {
     return ast_init(AST_FUNC_DEFINITION, dt, NULL, &(ast_node_t){
         .func_type = 'g',
         .func_name = func_name,
         .func_label = func_name,
         .residing = residing,
-        .extrn = true,
+        .extrn = extrn,
         .params = params,
         .local_variables = NULL,
         .body = NULL
@@ -395,6 +395,13 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indprintf(indent, "AST_BLUEPRINT {\n");
             indent++;
             std_ast_print(node, indent);
+            indprintf(indent, "bp_name: %s\n", node->bp_name);
+            indprintf(indent, "bp_size: %i\n", node->bp_size);
+            indprintf(indent, "bp_datatype: {\n");
+            indent++;
+            ast_print_datatype(node->bp_datatype, indent);
+            indent--;
+            indprintf(indent, "}\n");
             indprintf(indent, "inst_variables: [\n");
             indent++;
             for (int i = 0; i < node->inst_variables->size; i++)

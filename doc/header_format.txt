@@ -1,20 +1,41 @@
-[1 byte decl type; 00 - gvar, 01 - func definition]
-[1 byte type storage; 00 - id, 01 - name]
-if type storage = id:
-    [1 byte id of type]
-else:
-    [null terminated string]
-[1 byte visibility]
-[1 byte signedness; 00 - signed, 01 - unsigned]
-[null terminated string of the identifier's name]
-if decl type = func definition:
-    [2 byte parameter count]
-    [for each parameter in array]:
-        [1 byte type storage; 00 - id, 01 - name]
-        if type storage = id:
-            [2 byte id corresponding to a keyword in the compiler]
-        else:
-            [null terminated string]
-        [1 byte visibility]
-        [1 byte signedness; 00 - signed, 01 - unsigned]
-        [null terminated string of the identifier's name]
+[datatype]:
+    declaration visibility (datatype_t.visibility) (1 byte)
+    declaration base type (datatype_t.type) (1 byte)
+    declaration size (datatype_t.size) (1 byte)
+    declaration signedness (datatype_t.usign) (1 byte)
+
+    if datatype_t.dtt is DTT_OBJECT:
+        declaration type name (datatype_t.name) (null-terminated string)
+    if datatype_t.dtt is DTT_ARRAY:
+        declaration depth (datatype_t.depth) (1 byte)
+
+[function definition]:
+    do [datatype] for return type
+    function type (ast_node_t.func_type) (1 byte)
+    function lowlvl (ast_node_t.lowlvl) (1 byte)
+    function operator overload (ast_node_t.operator) (2 bytes)
+    function argument count (2 bytes)
+    loop over every argument:
+        argument identifier (null-terminated string)
+        do [datatype] for argument
+
+[start]:
+
+declaration type (2 bytes)
+declaration identifier (null-terminated string)
+do [datatype]
+
+if declaration type is function definition:
+    do [function definition]
+
+if declaration type is blueprint:
+    blueprint visibility (1 byte)
+    blueprint size (4 bytes)
+    blueprint instance variable count (2 bytes)
+    loop over every instance variable:
+        variable identifier (null-terminated string)
+        do [datatype] for variable
+    blueprint method count (4 bytes)
+    loop over every method:
+        method identifier (null-terminated string)
+        do [function definition] for method

@@ -232,7 +232,7 @@ typedef struct ast_node_t
             char* func_label;
             vector_t* params;
             vector_t* local_variables;
-            bool extrn;
+            char extrn;
             bool lowlvl;
             struct ast_node_t* body;
             int operator;
@@ -407,7 +407,7 @@ void map_delete(map_t* map);
 ast_node_t* ast_file_init(location_t* loc);
 ast_node_t* ast_import_init(location_t* loc, char* path);
 ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_type, char* func_name, char* residing);
-ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing);
+ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing, char extrn);
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name, ast_node_t* vinit, char* residing);
 ast_node_t* ast_iliteral_init(datatype_t* dt, location_t* loc, long long ivalue);
 ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue, char* slabel);
