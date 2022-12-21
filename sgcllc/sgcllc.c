@@ -11,7 +11,7 @@ map_t* builtins;
 
 void set_up_keywords(void)
 {
-    keywords = map_init(NULL, 100);
+    keywords = map_init(NULL, 150);
     #define keyword(id, name, settings) map_put(keywords, name, (void*) id);
     #include "keywords.inc"
     #undef keyword

@@ -1,0 +1,32 @@
+import "io";
+
+standard stringable
+{
+    public string to_string();
+}
+
+public lowlvl operator(+) string concat(string str, i32 x);
+public lowlvl operator(+) string concat(i32 x, string str);
+
+blueprint point follows stringable
+{
+    public i32 x;
+    public i32 y;
+
+    public constructor(i32 x, i32 y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+
+    public string to_string()
+    {
+        return "point{x=" + this.x + ", y=" + this.y + "}";
+    }
+}
+
+i32 main()
+{
+    point p = point(5, 3);
+    print(p.to_string());
+}

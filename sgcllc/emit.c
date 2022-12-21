@@ -228,6 +228,7 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
     if (func_definition->func_type == 'c')
         emit("movq -8(%%rbp), %%rax"); // return the object
     emit("addq $%i, %%rsp", stackalloc);
+    e->stackoffset = 0;
     emit("popq %%rbp");
     emit("ret");
     emit(".global %s", func_definition->func_label);
@@ -495,7 +496,8 @@ static void emit_selection(emitter_t* e, ast_node_t* op, bool deref)
             break;
         }
     }
-    emit("leaq %i(%%rax), %%rax", op->rhs->voffset);
+    if (op->rhs->voffset)
+        emit("leaq %i(%%rax), %%rax", op->rhs->voffset);
     if (deref)
     {
         if (!isfloattype(op->datatype->type))

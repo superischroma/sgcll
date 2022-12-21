@@ -75,6 +75,7 @@ int precedence(int op)
         case OP_MAKE:
         case OP_NOT:
         case OP_MAGNITUDE:
+        case OP_CAST:
             return 3;
         case OP_SUBSCRIPT:
         case OP_SELECTION:
@@ -386,6 +387,23 @@ bool parser_eof(parser_t* p)
     return p->oindex >= p->lex->output->size;
 }
 
+datatype_t* get_default_type(int kw)
+{
+    switch (kw)
+    {
+        case KW_VOID: return t_void;
+        case KW_BOOL: return t_bool;
+        case KW_I8: return t_i8;
+        case KW_I16: return t_i16;
+        case KW_I32: return t_i32;
+        case KW_I64: return t_i64;
+        case KW_F32: return t_f32;
+        case KW_F64: return t_f64;
+        case KW_STRING: return t_string;
+        default: return t_object;
+    }
+}
+
 int parser_get_kw_settings(parser_t* p, int kw)
 {
     bool found = false;
@@ -433,9 +451,10 @@ static bool parser_is_func_definition(parser_t* p)
     for (;; i++)
     {
         token_t* token = parser_far_peek(p, i);
+        token_t* prev = parser_far_peek(p, i - 1);
         if (token == NULL)
             return false;
-        if (token->type == TT_KEYWORD && token->id == KW_LPAREN)
+        if (token->type == TT_KEYWORD && token->id == KW_LPAREN && (!prev || prev->type != TT_KEYWORD))
             break;
         if (token->type != TT_IDENTIFIER && token->type != TT_KEYWORD)
             return false;
@@ -629,11 +648,15 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
                 break;
             case KW_OPERATOR:
             {
+                parser_get(p);
+                parser_expect(p, '(');
                 if (!additional)
                     errorp(token->loc->row, token->loc->col, "operator overload only allowed on functions");
-                token_t* operator = parser_peek(p);
+                token_t* operator = parser_get(p);
                 if (!operator || operator->type != TT_KEYWORD)
                     errorp(token->loc->row, token->loc->col, "expected operator type after operator specifier");
+                parser_expect(p, ')');
+                parser_unget(p);
                 additional->operator = operator->id;
                 break;
             }
@@ -1100,9 +1123,14 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
         }
         else
         {
-            while (vector_top(stack) != NULL && precedence(token->id) > precedence(((token_t*) vector_top(stack))->id))
-                vector_push(expr_result, vector_pop(stack));
-            vector_push(stack, token);
+            if (token->id >= KW_VOID && token->id <= KW_STRING)
+                vector_push(expr_result, datatype_token_init(TT_DATATYPE, get_default_type(token->id), token->loc->offset, token->loc->row, token->loc->col));
+            else
+            {
+                while (vector_top(stack) != NULL && precedence(token->id) > precedence(((token_t*) vector_top(stack))->id))
+                    vector_push(expr_result, vector_pop(stack));
+                vector_push(stack, token);
+            }
         }
     }
     while (vector_top(stack) != NULL)
@@ -1130,6 +1158,26 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
             printf("result[%i] = %c (id: %i)\n", i, token->id, token->id);
     }
     printf("----- end results\n");
+    #define check_binary_operator_overloads(lhs, rhs, chk, cargs) \
+        if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
+            lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING)) \
+            { \
+                vector_t* keys = map_keys(p->genv); \
+                ast_node_t* found = NULL; \
+                for (int i = 0; i < keys->size; i++) \
+                { \
+                    ast_node_t* node = map_get(p->genv, vector_get(keys, i)); \
+                    if (node->type != AST_FUNC_DEFINITION) \
+                        continue; \
+                    datatype_t* rettype = node->datatype; \
+                    chk \
+                } \
+                vector_delete(keys); \
+                if (!found) \
+                    errorp(token->loc->row, token->loc->col, "no operator overload available for the specified arguments"); \
+                vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, cargs)); \
+                break; \
+            }
     for (int i = 0; i < expr_result->size; i++)
     {
         token_t* token = (token_t*) vector_get(expr_result, i);
@@ -1195,34 +1243,40 @@ inst_var_success:
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
                     if (lhs->datatype->type == DTT_LET) lhs->datatype = rhs->datatype;
                     if (rhs->type == AST_MAKE) lhs->datatype = rhs->datatype;
-                    if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT ||
-                        lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING))
-                    {
-                        vector_t* keys = map_keys(p->genv);
-                        ast_node_t* found = NULL;
-                        for (int i = 0; i < keys->size; i++)
+                    check_binary_operator_overloads(lhs, rhs,
+                        if (node->params->size != 2)
+                            continue;
+                        ast_node_t* func_lhs = vector_get(node->params, 0);
+                        ast_node_t* func_rhs = vector_get(node->params, 1);
+                        if (node->operator == token->id && same_datatype(p, lhs->datatype, func_lhs->datatype) &&
+                            same_datatype(p, rhs->datatype, func_rhs->datatype))
                         {
-                            ast_node_t* node = map_get(p->genv, vector_get(keys, i));
-                            if (node->type != AST_FUNC_DEFINITION)
-                                continue;
-                            if (node->params->size != 2)
-                                continue;
-                            ast_node_t* func_lhs = vector_get(node->params, 0);
-                            ast_node_t* func_rhs = vector_get(node->params, 1);
-                            if (node->operator == token->id && same_datatype(p, lhs->datatype, func_lhs->datatype) &&
-                                same_datatype(p, rhs->datatype, func_rhs->datatype))
-                            {
-                                found = node;
-                                break;
-                            }
+                            found = node; 
+                            break;
                         }
-                        vector_delete(keys);
-                        if (!found)
-                            errorp(token->loc->row, token->loc->col, "no operator overload available for the specified arguments");
-                        vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, vector_qinit(2, lhs, rhs)));
-                        break;
-                    }
+                    , vector_qinit(2, lhs, rhs));
                     vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
+                    break;
+                }
+                case OP_CAST:
+                {
+                    ast_node_t* type = vector_pop(stack);
+                    ast_node_t* castval = vector_pop(stack);
+                    printf("found %i and %i\n", type->type, castval->type);
+                    if (!type || !castval)
+                        errorp(token->loc->row, token->loc->col, "expected 2 operands for cast operator");
+                    check_binary_operator_overloads(castval, type, 
+                        if (node->params->size != 1)
+                            continue;
+                        ast_node_t* func_lhs = vector_get(node->params, 0);
+                        if (node->operator == token->id && same_datatype(p, castval->datatype, func_lhs->datatype) &&
+                            same_datatype(p, type->datatype, rettype))
+                        {
+                            found = node;
+                            break;
+                        }
+                    , vector_qinit(1, castval));
+                    vector_push(stack, ast_cast_init(type->datatype, token->loc, castval));
                     break;
                 }
                 case OP_SUBSCRIPT:
@@ -1320,7 +1374,9 @@ try_again:
                         found = random_flavor;
 found_function:
                     if (!found)
-                        errorp(token->loc->row, token->loc->col, "could not find a function by the name of '%s' that matched the specified args", token->content);
+                        errorp(token->loc->row, token->loc->col, "could not find a function by the name of '%s' that matched the specified args", random_flavor->func_name);
+                    if (!strcmp(found->func_name, "_"))
+                        errorp(token->loc->row, token->loc->col, "cannot call unnamed functions");
                     printf("found: %s\n", found->func_label);
                     if (found->residing != NULL && strcmp(p->lex->filename, found->residing) && found->datatype->visibility != VT_PUBLIC)
                         errorp(token->loc->row, token->loc->col, "can't call a function that's private to '%s'", found->residing);

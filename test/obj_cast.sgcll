@@ -1,0 +1,35 @@
+blueprint point1d
+{
+    public x;
+
+    public constructor(x)
+    {
+        this.x = x;
+    }
+}
+
+blueprint point2d
+{
+    public x;
+    public y;
+
+    public constructor(x, y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+public operator(->) point2d p_to_p2d(point1d p)
+{
+    return point2d(p.x, 0);
+}
+
+i32 main()
+{
+    point1d p = point1d(5);
+    __builtin_i32_println(p.x);
+    point2d p2d = p -> point2d;
+    __builtin_i32_println(p2d.x);
+    __builtin_i32_println(p2d.y);
+}

@@ -1,0 +1,7 @@
+import "io";
+
+i32 main()
+{
+    f32 f = 3.5f;
+    print(f -> i32);
+}
