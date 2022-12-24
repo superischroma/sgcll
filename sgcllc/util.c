@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -102,4 +103,72 @@ char* isolate_filename(char* path)
         name = path;
     buffer_delete(namebuf);
     return name;
+}
+
+// I/O utils
+
+void impl_writestr(char* str, FILE* out)
+{
+    if (!str)
+    {
+        fputc('\0', out);
+        return;
+    }
+    fwrite(str, sizeof(char), strlen(str), out);
+    fputc('\0', out);
+}
+
+char impl_read(FILE* in)
+{
+    if (feof(in))
+        errorc("corrupted file (line %i)", __LINE__);
+    char c;
+    fread(&c, sizeof(char), 1, in);
+    return c;
+}
+
+short impl_readi16(FILE* in)
+{
+    if (feof(in))
+        errorc("corrupted file (line %i)", __LINE__);
+    short s;
+    fread(&s, sizeof(short), 1, in);
+    return s;
+}
+
+int impl_readi32(FILE* in)
+{
+    if (feof(in))
+        errorc("corrupted file (line %i)", __LINE__);
+    int i;
+    fread(&i, sizeof(int), 1, in);
+    return i;
+}
+
+char* impl_readstr(FILE* in)
+{
+    if (feof(in))
+        errorc("corrupted file (line %i)", __LINE__);
+    buffer_t* buffer = buffer_init(1024, 64);
+    for (char c = fgetc(in); c; c = fgetc(in))
+    {
+        buffer_append(buffer, c);
+        if (feof(in)) errorc("corrupted file (line %i)", __LINE__);
+    }
+    buffer_append(buffer, '\0');
+    if (buffer->size == 1)
+        return NULL;
+    return buffer_export(buffer);
+}
+
+bool fexists(char* path)
+{
+    FILE* exists = fopen(path, "rb");
+    if (!exists || feof(exists) || ferror(exists))
+    {
+        fclose(exists);
+        return false;
+    }
+    fclose(exists);
+    return true;
 }

@@ -1,16 +1,10 @@
 #include <windows.h>
 
+#include "builtin.h"
+
 #define __BUILTIN_DEBUG
 
-#define __builtin_abs(x) ((x) < 0 ? -(x) : (x))
-#define __builtin_fmod(x, y) (x - y * (int) (x / y))
-
-#define __builtin_varadic NULL; \
-    __asm__("   leaq 32(%rbp), %rax\n" \
-            "   movq %rax, -8(%rbp)")
-
-
-int __builtin_i32_dec_itos(int n, char* buffer)
+int __builtin_i64_dec_itos(long long n, char* buffer)
 {
     int i, sign;
 
@@ -32,12 +26,12 @@ int __builtin_i32_dec_itos(int n, char* buffer)
     return i;
 }
 
-int __builtin_f32_dec_ftos(float f, char* buffer, int precision)
+int __builtin_f64_dec_ftos(double d, char* buffer, int precision)
 {
-    int ipart = (int) f;
-    int i = __builtin_i32_dec_itos(ipart, buffer);
+    int ipart = (int) d;
+    int i = __builtin_i64_dec_itos(ipart, buffer);
     buffer[i++] = '.';
-    float dec = (f - ipart) * 10.0f;
+    double dec = (d - ipart) * 10.0f;
     for (int j = 0; j < precision; i++, j++, dec = (dec * 10.0f) - ((int) dec) * 10)
         buffer[i] = (int) dec + '0';
     buffer[i] = '\0';
@@ -51,19 +45,19 @@ int __builtin_string_length(char* str)
     return i;
 }
 
-void __builtin_i32_println(int i)
+void __builtin_i64_println(long long ll)
 {
     char buffer[34];
-    int c = __builtin_i32_dec_itos(i, buffer);
+    int c = __builtin_i64_dec_itos(ll, buffer);
     buffer[c] = '\n';
     buffer[c + 1] = '\0';
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
 }
 
-void __builtin_f32_println(float f)
+void __builtin_f64_println(double d)
 {
     char buffer[80];
-    int c = __builtin_f32_dec_ftos(f, buffer, 6);
+    int c = __builtin_f64_dec_ftos(d, buffer, 6);
     buffer[c] = '\n';
     buffer[c + 1] = '\0';
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
@@ -129,24 +123,9 @@ size_t __builtin_array_size(void* array)
     return HeapSize(GetProcessHeap(), 0, array - 1) / *((char*) array - 1);
 }
 
-double __builtin_dd_fmod(double x, double y)
+void __builtin_copy_memory(void* dest, const void* src, int length)
 {
-    return __builtin_fmod(x, y);
-}
-
-double __builtin_ds_fmod(double x, float y)
-{
-    return __builtin_fmod(x, y);
-}
-
-double __builtin_sd_fmod(float x, double y)
-{
-    return __builtin_fmod(x, y);
-}
-
-float __builtin_ss_fmod(float x,  float y)
-{
-    return __builtin_fmod(x, y);
+    CopyMemory(dest, src, length);
 }
 
 void __builtin_init()

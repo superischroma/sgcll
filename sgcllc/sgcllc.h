@@ -6,7 +6,7 @@
 
 /* Typedefs */
 
-typedef int token_type, ast_node_type, datatype_type, visibility_type, register_type;
+typedef int token_type, ast_node_type, datatype_type, visibility_type, register_type, gc_node_type;
 
 /* Macros */
 
@@ -46,6 +46,8 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define DEFAULT_ALLOC_DELTA 5
 #define RETAIN_OLD_CAPACITY -1
 
+#define DEFAULT_VECTOR vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA)
+
 /* Register Types */
 #define REG_A 'a'
 #define REG_B 'b'
@@ -69,6 +71,16 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define min(a, b) (a < b ? a : b)
 #define max(a, b) (a > b ? a : b)
 
+#define read impl_read(in)
+#define readi16 impl_readi16(in)
+#define readi32 impl_readi32(in)
+#define readstr impl_readstr(in)
+
+#define write(c) fputc(c, out)
+#define writei16(c) fwrite(&(c), sizeof(short), 1, out)
+#define writei32(c) fwrite(&(c), sizeof(int), 1, out)
+#define writestr(str) impl_writestr(str, out)
+
 enum {
     KW_LPAREN = '(',
     KW_RPAREN = ')',
@@ -81,6 +93,9 @@ enum {
     OP_ASSIGN = '=',
     OP_ADD = '+',
     OP_SUB = '-',
+    OP_AND = '&',
+    OP_OR = '|',
+    OP_XOR = '^',
     OP_MUL = '*',
     OP_DIV = '/',
     OP_MOD = '%',
@@ -88,6 +103,8 @@ enum {
     OP_SUBSCRIPT = '[',
     OP_MAGNITUDE = '#',
     OP_SELECTION = '.',
+    OP_GREATER = '>',
+    OP_LESS = '<',
     AST_FILE = 256,
     AST_STUB,
     AST_IMPORT,
@@ -107,6 +124,7 @@ enum {
     AST_CAST,
     AST_MAKE,
     AST_BLUEPRINT,
+    AST_NAMESPACE,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -126,6 +144,7 @@ typedef struct
 {
     FILE* file;
     char* filename;
+    char* path;
     int row;
     int col;
     int offset;
@@ -233,7 +252,7 @@ typedef struct ast_node_t
             vector_t* params;
             vector_t* local_variables;
             char extrn;
-            bool lowlvl;
+            char* lowlvl_label;
             struct ast_node_t* body;
             int operator;
         };
@@ -271,7 +290,11 @@ typedef struct ast_node_t
             struct ast_node_t* for_then;
         };
         // AST_IMPORT
-        char* path;
+        struct
+        {
+            char* path;
+            bool namespaced;
+        };
         // AST_RETURN
         struct ast_node_t* retval;
         // AST_DELETE
@@ -289,8 +312,17 @@ typedef struct ast_node_t
             datatype_t* bp_datatype;
             int bp_size;
         };
+        // AST_NAMESPACE
+        char* ns_name;
     };
 } ast_node_t;
+
+typedef struct gc_node_t
+{
+    ast_node_t* ast_equiv;
+    vector_t* parents;
+    vector_t* children;
+} gc_node_t;
 
 typedef struct map_t
 {
@@ -315,6 +347,7 @@ typedef struct parser_t
     vector_t* links;
     ast_node_t* current_func;
     ast_node_t* current_blueprint;
+    ast_node_t* current_block;
     char* entry;
 } parser_t;
 
@@ -329,10 +362,16 @@ typedef struct emitter_t
     bool control;
 } emitter_t;
 
+typedef struct options_t
+{
+    vector_t* import_search_paths;
+} options_t;
+
 /* sgcllc.c */
 
 extern map_t* keywords;
 extern map_t* builtins;
+extern options_t* options;
 
 vector_t* build(char* path);
 
@@ -348,7 +387,9 @@ token_t* lex_get(lexer_t* lex, int index);
 
 buffer_t* buffer_init(int capacity, int alloc_delta);
 char buffer_append(buffer_t* buffer, char c);
+char* buffer_nstring(buffer_t* buffer, char* str, int len);
 char* buffer_string(buffer_t* buffer, char* str);
+long long buffer_int(buffer_t* buffer, long long ll);
 char* buffer_export(buffer_t* buffer);
 void buffer_delete(buffer_t* buffer);
 char buffer_get(buffer_t* buffer, int index);
@@ -363,6 +404,12 @@ bool isfloattype(datatype_type dtt);
 int itos(int n, char* buffer);
 void systemf(const char* fmt, ...);
 char* isolate_filename(char* path);
+void impl_writestr(char* str, FILE* out);
+char impl_read(FILE* in);
+short impl_readi16(FILE* in);
+int impl_readi32(FILE* in);
+char* impl_readstr(FILE* in);
+bool fexists(char* path);
 
 /* token.c */
 
@@ -405,7 +452,7 @@ void map_delete(map_t* map);
 /* ast.c */
 
 ast_node_t* ast_file_init(location_t* loc);
-ast_node_t* ast_import_init(location_t* loc, char* path);
+ast_node_t* ast_import_init(location_t* loc, char* path, bool namespaced);
 ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_type, char* func_name, char* residing);
 ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing, char extrn);
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name, ast_node_t* vinit, char* residing);
@@ -424,6 +471,7 @@ ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_make_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_unary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* operand);
 ast_node_t* ast_blueprint_init(location_t* loc, char* bp_name, datatype_t* dt);
+ast_node_t* ast_namespace_init(location_t* loc, char* ns_name);
 void ast_print(ast_node_t* node);
 void print_datatype(datatype_t* dt);
 
@@ -440,6 +488,7 @@ void parser_delete(parser_t* p);
 void set_up_builtins(void);
 char* make_label(parser_t* p, void* content);
 char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blueprint);
+datatype_t* arith_conv(datatype_t* t1, datatype_t* t2);
 
 /* emitter.c */
 
@@ -451,5 +500,10 @@ emitter_t* emitter_delete(emitter_t* e);
 
 void write_header(FILE* out, map_t* genv);
 vector_t* read_header(FILE* in, char* filename);
+
+/* options.c */
+
+void write_options(options_t* options, FILE* out);
+options_t* read_options(FILE* in);
 
 #endif

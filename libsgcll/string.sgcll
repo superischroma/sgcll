@@ -1,0 +1,3 @@
+public operator(+) lowlvl string concat(string lhs, string rhs);
+public operator(+) lowlvl string concat(string lhs, i64 rhs);
+public operator(+) lowlvl string concat(i64 lhs, string rhs);

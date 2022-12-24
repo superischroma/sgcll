@@ -15,6 +15,7 @@ lexer_t* lex_init(FILE* file, char* path)
     lex->offset = 0;
     lex->output = vector_init(50, 20);
     lex->filename = isolate_filename(path);
+    lex->path = path;
     return lex;
 }
 
@@ -187,7 +188,52 @@ void lex_read_token(lexer_t* lex)
         case OP_MOD:
         case OP_ASSIGN:
         case OP_NOT:
+        case OP_GREATER:
+        case OP_LESS:
+        case OP_AND:
+        case OP_OR:
+        case OP_XOR:
         {
+            if (c == OP_GREATER && lex_peek(lex) == OP_GREATER)
+            {
+                c = OP_SHIFT_RIGHT;
+                lex_read(lex);
+                if (lex_peek(lex) == OP_GREATER)
+                {
+                    c = OP_SHIFT_URIGHT;
+                    lex_read(lex);
+                    if (lex_peek(lex) == OP_ASSIGN)
+                    {
+                        c = OP_ASSIGN_SHIFT_URIGHT;
+                        lex_read(lex);
+                    }
+                }
+                else if (lex_peek(lex) == OP_ASSIGN)
+                {
+                    c = OP_ASSIGN_SHIFT_RIGHT;
+                    lex_read(lex);
+                }
+            }
+            if (c == OP_LESS && lex_peek(lex) == OP_LESS)
+            {
+                c = OP_SHIFT_LEFT;
+                lex_read(lex);
+                if (lex_peek(lex) == OP_ASSIGN)
+                {
+                    c = OP_ASSIGN_SHIFT_LEFT;
+                    lex_read(lex);
+                }
+            }
+            if (c == OP_OR && lex_peek(lex) == OP_OR)
+            {
+                c = OP_LOGICAL_OR;
+                lex_read(lex);
+            }
+            if (c == OP_AND && lex_peek(lex) == OP_AND)
+            {
+                c = OP_LOGICAL_AND;
+                lex_read(lex);
+            }
             if (lex_peek(lex) == '=')
             {
                 switch (c)
@@ -198,6 +244,11 @@ void lex_read_token(lexer_t* lex)
                     case OP_MOD: c = OP_ASSIGN_MOD; break;
                     case OP_ASSIGN: c = OP_EQUAL; break;
                     case OP_NOT: c = OP_NOT_EQUAL; break;
+                    case OP_GREATER: c = OP_GREATER_EQUAL; break;
+                    case OP_LESS: c = OP_LESS_EQUAL; break;
+                    case OP_AND: c = OP_ASSIGN_AND; break;
+                    case OP_OR: c = OP_ASSIGN_OR; break;
+                    case OP_XOR: c = OP_ASSIGN_XOR; break;
                 }
                 lex_read(lex);
             }

@@ -1,0 +1,6 @@
+import namespaced "io";
+
+i32 main()
+{
+    io::print("Hello!");
+}

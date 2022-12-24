@@ -2,6 +2,6 @@ import "io";
 
 i32 main()
 {
-    print("hi");
-    print(5);
+    string str = "hi";
+    print(str);
 }

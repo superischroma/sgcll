@@ -21,14 +21,26 @@ char buffer_append(buffer_t* buffer, char c)
     return c;
 }
 
-char* buffer_string(buffer_t* buffer, char* str)
+char* buffer_nstring(buffer_t* buffer, char* str, int len)
 {
-    int len = strlen(str);
     if (buffer->size + len >= buffer->capacity)
         buffer->data = realloc(buffer->data, buffer->capacity += len);
     memcpy(buffer->data + buffer->size, str, len);
     buffer->size += len;
     return str;
+}
+
+char* buffer_string(buffer_t* buffer, char* str)
+{
+    return buffer_nstring(buffer, str, strlen(str));
+}
+
+long long buffer_int(buffer_t* buffer, long long ll)
+{
+    char ibuf[33];
+    itos(ll, ibuf);
+    buffer_string(buffer, ibuf);
+    return ll;
 }
 
 char* buffer_export(buffer_t* buffer)

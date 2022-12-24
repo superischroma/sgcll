@@ -49,11 +49,11 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.sgcll",
-				"match": "\\b(import|namespace|return|if|else|elif|repeat|for|while|delete|make|enter)\\b"
+				"match": "\\b(import|namespaced|return|if|else|elif|repeat|for|while|delete|make|enter)\\b"
 			},
 			{
 				"name": "constant.language.sgcll",
-				"match": "\\b(public|private|protected|unsigned|let|void|bool|i8|i16|i32|i64|f32|f64|lowlvl|string|blueprint|constructor|destructor|this|operator|standard|follows)\\b"
+				"match": "\\b(public|private|protected|unsigned|let|void|bool|i8|i16|i32|i64|f32|f64|lowlvl|string|blueprint|constructor|destructor|this|operator|requirement|follows)\\b"
 			}]
 		},
 		"strings": {

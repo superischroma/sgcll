@@ -1,0 +1,66 @@
+blueprint extra
+{
+    public a;
+
+    public constructor(a)
+    {
+        this.a = a;
+    }
+}
+
+blueprint point
+{
+    public x;
+    public y;
+    public extra e;
+
+    public constructor(x, y, extra e)
+    {
+        this.x = x;
+        this.y = y;
+        this.e = e;
+    }
+}
+
+i32 main()
+{
+    point[] ps = make point[5];
+    for (i32 i = 0; i < #ps; i += 1)
+    {
+        point p = point(5, 3, extra(5));
+        ps[i] = p;
+    }
+}
+
+/*
+
+if any block body is encountered:
+    - create a node for the body
+    - make its parent the current body or program
+    - make it a child of the current body or program
+
+if local variable is created:
+    - create a node for the body
+    - make its parent the current body or program
+    - make it a child of the current body or program
+
+if a statement is an expression:
+    - read any function calls
+    - connect function calls within other function calls to each other
+
+if any block body is encountered:
+    - make it the branch of the current body or program
+
+if local variable is created:
+    - make it a child of the block that it inhabits
+
+if an object/array is assigned to a local variable:
+    - make it a child of the local variable
+
+if an object/array is assigned to the subscription of an array
+    - make it a child of the array instance
+
+if an end of block is encountered:
+    - unlink any nodes from the tree which do not have connections to undeleted nodes
+
+*/

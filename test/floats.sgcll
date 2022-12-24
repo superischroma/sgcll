@@ -1,6 +1,7 @@
+import "io";
+
 i32 main()
 {
-    i16 a = (10.0f / 2.5f) * 100;
-    __builtin_i32_println(a);
-    __builtin_f32_println(a);
+    f64 d = 1.2;
+    print(d);
 }

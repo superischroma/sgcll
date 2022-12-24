@@ -138,9 +138,19 @@ static void emit_blueprint(emitter_t* e, ast_node_t* blueprint)
 static void emit_file(emitter_t* e, ast_node_t* file)
 {
     for (int i = 0; i < e->p->userexterns->size; i++)
-        emit(".extern %s", ((ast_node_t*) vector_get(e->p->userexterns, i))->func_label);
+    {
+        ast_node_t* userextern = vector_get(e->p->userexterns, i);
+        if (userextern->lowlvl_label)
+            continue;
+        emit(".extern %s", userextern->func_label);
+    }
     for (int i = 0; i < e->p->cexterns->size; i++)
-        emit(".extern %s", ((ast_node_t*) vector_get(e->p->cexterns, i))->func_label);
+    {
+        ast_node_t* cextern = vector_get(e->p->cexterns, i);
+        if (cextern->lowlvl_label)
+            continue;
+        emit(".extern %s", cextern->func_label);
+    }
     ast_node_t* defaul_main = ast_func_definition_init(t_i32, NULL, 'g', e->p->entry, e->p->lex->filename);
     char* defaul_label = make_func_label(e->p->lex->filename, defaul_main, NULL);
     printf("default label: %s\n", defaul_label);
@@ -201,6 +211,8 @@ static void emit_gvar_decl(emitter_t* e, ast_node_t* gvar)
 
 static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_node_t* blueprint)
 {
+    if (func_definition->lowlvl_label)
+        return;
     emit_noindent("%s:", func_definition->func_label);
     emit("pushq %%rbp");
     emit("movq %%rsp, %%rbp");
@@ -347,6 +359,9 @@ static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
     {
         case OP_ADD: case OP_ASSIGN_ADD: operation = "add"; break;
         case OP_SUB: case OP_ASSIGN_SUB: operation = "sub"; break;
+        case OP_AND: case OP_ASSIGN_AND: operation = "and"; break;
+        case OP_OR: case OP_ASSIGN_OR: operation = "or"; break;
+        case OP_XOR: case OP_ASSIGN_XOR: operation = "xor"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
@@ -369,7 +384,7 @@ static void emit_float_add_sub_mul_div(emitter_t* e, ast_node_t* op)
         case OP_MUL: case OP_ASSIGN_MUL: operation = "mul"; break;
         case OP_DIV: case OP_ASSIGN_DIV: operation = "div"; break;
         default:
-            errore(op->loc->row, op->loc->col, "unknown operation");
+            errore(op->loc->row, op->loc->col, "operator %i does not exist or cannot be applied to a floating type", op->type);
     }
     emit_expr(e, rhs);
     emit_conv(e, rhs->datatype, op->datatype);
@@ -417,10 +432,6 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
         emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), regD, regA);
 }
 
-static void emit_float_mod(emitter_t* e, ast_node_t* op)
-{
-}
-
 static void emit_mul_div(emitter_t* e, ast_node_t* op)
 {
     if (!isfloattype(op->datatype->type))
@@ -429,35 +440,107 @@ static void emit_mul_div(emitter_t* e, ast_node_t* op)
         emit_float_add_sub_mul_div(e, op);
 }
 
-static void emit_int_conditional(emitter_t* e, ast_node_t* op)
+static void emit_conditional(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    datatype_t* agreed_type = arith_conv(lhs->datatype, rhs->datatype);
     char* operation = NULL;
     switch (op->type)
     {
         case OP_EQUAL: operation = "sete"; break;
         case OP_NOT_EQUAL: operation = "setne"; break;
+        case OP_GREATER: operation = "seta"; break;
+        case OP_GREATER_EQUAL: operation = "setae"; break;
+        case OP_LESS: operation = "setb"; break;
+        case OP_LESS_EQUAL: operation = "setbe"; break;
+        default:
+            errore(op->loc->row, op->loc->col, "unknown operation");
+    }
+    char* regA = find_register(REG_A, agreed_type->size);
+    char* regAb = find_register(REG_A, 1);
+    emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, agreed_type);
+    if (!isfloattype(agreed_type->type))
+        emitter_stash_int_reg(e, regA); // rhs stashed
+    else
+        emitter_stash_float_reg(e, "xmm0", agreed_type->size);
+    emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, agreed_type);
+    if (!isfloattype(agreed_type->type))
+        emit("cmp%c %%%s, %%%s", int_reg_size(agreed_type->size), emitter_restore_int_reg(e, agreed_type->size), regA);
+    else
+        emit("comis%c %%%s, %%xmm0", floatsize(agreed_type->size), emitter_restore_float_reg(e, agreed_type->size));
+    emit("%s %%%s", operation, regAb);
+    emit("movzb%c %%%s, %%%s", int_reg_size(agreed_type->size), regAb, regA);
+}
+
+static void emit_logical_and(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* regA = find_register(REG_A, 1);
+    emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, t_bool);
+    emitter_stash_int_reg(e, regA);
+    emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, t_bool);
+    char* fail = make_label(e->p, NULL);
+    emit("cmpb $0, %%al");
+    emit("je %s", fail);
+    emit("cmpb $0, %%%s", emitter_restore_int_reg(e, 1));
+    emit("je %s", fail);
+    emit("movb $1, %%al");
+    char* success = make_label(e->p, NULL);
+    emit("jmp %s", success);
+    emit_noindent("%s:", fail);
+    emit("movb $0, %%al");
+    emit_noindent("%s:", success);
+}
+
+static void emit_logical_or(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* regA = find_register(REG_A, 1);
+    emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, t_bool);
+    emitter_stash_int_reg(e, regA);
+    emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, t_bool);
+    char* success = make_label(e->p, NULL);
+    emit("cmpb $0, %%al");
+    emit("jne %s", success);
+    emit("cmpb $0, %%%s", emitter_restore_int_reg(e, 1));
+    char* fail = make_label(e->p, NULL);
+    emit("je %s", fail);
+    emit_noindent("%s:", success);
+    emit("movb $1, %%al");
+    char* skip = make_label(e->p, NULL);
+    emit("jmp %s", skip);
+    emit_noindent("%s:", fail);
+    emit("movb $0, %%al");
+    emit_noindent("%s:", skip);
+}
+
+static void emit_shift(emitter_t* e, ast_node_t* op)
+{
+    ast_node_t* lhs = op->lhs, * rhs = op->rhs;
+    char* operation = NULL;
+    switch (op->type)
+    {
+        case OP_SHIFT_LEFT: case OP_ASSIGN_SHIFT_LEFT: operation = "sal"; break;
+        case OP_SHIFT_RIGHT: case OP_ASSIGN_SHIFT_RIGHT: operation = "sar"; break;
+        case OP_SHIFT_URIGHT: case OP_ASSIGN_SHIFT_URIGHT: operation = "shr"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
     char* regA = find_register(REG_A, op->datatype->size);
-    char* regAb = find_register(REG_A, 1);
     emit_expr(e, rhs);
     emit_conv(e, rhs->datatype, op->datatype);
-    emitter_stash_int_reg(e, regA); // rhs stashed
+    emitter_stash_int_reg(e, "rcx");
+    emit("mov%c %%%s, %%%s", int_reg_size(op->datatype->size), regA, find_register(REG_C, op->datatype->size));
     emit_expr(e, lhs);
     emit_conv(e, lhs->datatype, op->datatype);
-    emit("cmp%c %%%s, %%%s", int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), regA);
-    emit("%s %%%s", operation, regAb);
-    emit("movzb%c %%%s, %%%s", int_reg_size(op->datatype->size), regAb, regA);
-}
-
-static void emit_conditional(emitter_t* e, ast_node_t* op)
-{
-    if (!isfloattype(op->datatype->type))
-        emit_int_conditional(e, op);
-    //else
-    //    emit_float_conditional(e, op);
+    emit("%s%c %%cl, %%%s", operation, int_reg_size(op->datatype->size), regA);
+    emit("movq %%%s, %%rcx", emitter_restore_int_reg(e, 8));
 }
 
 static void emit_subscript(emitter_t* e, ast_node_t* op, bool deref)
@@ -525,16 +608,16 @@ static void emit_func_call(emitter_t* e, ast_node_t* call)
                     emit("movs%c %%xmm0, %%xmm%i", floatsize(arg->datatype->size), i);
             }
             else
-                emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->type), find_register(x64cc[i], arg->datatype->type));
+                emit("mov%c %%%s, %%%s", int_reg_size(arg->datatype->size), find_register(REG_A, arg->datatype->size), find_register(x64cc[i], arg->datatype->size));
         }
     }
-    emit("call %s", call->func->func_label);
+    emit("call %s", call->func->lowlvl_label != NULL ? call->func->lowlvl_label : call->func->func_label);
 }
 
 static void emit_if_statement(emitter_t* e, ast_node_t* stmt)
 {
     emit_expr(e, stmt->if_cond);
-    emit("cmp%c $0, %%%s", int_reg_size(stmt->if_cond->datatype->size), find_register(REG_A, stmt->if_cond->datatype->type));
+    emit("cmp%c $0, %%%s", int_reg_size(stmt->if_cond->datatype->size), find_register(REG_A, stmt->if_cond->datatype->size));
     char* skip = make_label(e->p, NULL);
     emit("je %s", skip);
     for (int i = 0; i < stmt->if_then->statements->size; i++)
@@ -632,6 +715,9 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case OP_ADD:
         case OP_SUB:
+        case OP_AND:
+        case OP_OR:
+        case OP_XOR:
         {
             emit_add_sub(e, expr);
             break;
@@ -645,6 +731,9 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case OP_ASSIGN_ADD:
         case OP_ASSIGN_SUB:
+        case OP_ASSIGN_AND:
+        case OP_ASSIGN_OR:
+        case OP_ASSIGN_XOR:
         {
             emit_add_sub(e, expr);
             if (expr->lhs->datatype != expr->rhs->datatype)
@@ -664,8 +753,39 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case OP_EQUAL:
         case OP_NOT_EQUAL:
+        case OP_GREATER:
+        case OP_GREATER_EQUAL:
+        case OP_LESS:
+        case OP_LESS_EQUAL:
         {
             emit_conditional(e, expr);
+            break;
+        }
+        case OP_LOGICAL_AND:
+        {
+            emit_logical_and(e, expr);
+            break;
+        }
+        case OP_LOGICAL_OR:
+        {
+            emit_logical_or(e, expr);
+            break;
+        }
+        case OP_SHIFT_LEFT:
+        case OP_SHIFT_RIGHT:
+        case OP_SHIFT_URIGHT:
+        {
+            emit_shift(e, expr);
+            break;
+        }
+        case OP_ASSIGN_SHIFT_LEFT:
+        case OP_ASSIGN_SHIFT_RIGHT:
+        case OP_ASSIGN_SHIFT_URIGHT:
+        {
+            emit_shift(e, expr);
+            if (expr->lhs->datatype != expr->rhs->datatype)
+                emit_conv(e, expr->rhs->datatype, expr->lhs->datatype);
+            emit_assign(e, expr);
             break;
         }
         case OP_SUBSCRIPT:

@@ -23,10 +23,11 @@ ast_node_t* ast_file_init(location_t* loc)
     });
 }
 
-ast_node_t* ast_import_init(location_t* loc, char* path)
+ast_node_t* ast_import_init(location_t* loc, char* path, bool namespaced)
 {
     return ast_init(AST_IMPORT, NULL, loc, &(ast_node_t){
-        .path = path
+        .path = path,
+        .namespaced = namespaced
     });
 }
 
@@ -185,6 +186,13 @@ ast_node_t* ast_blueprint_init(location_t* loc, char* bp_name, datatype_t* dt)
         .inst_variables = vector_init(5, 5),
         .methods = vector_init(10, 5),
         .bp_datatype = dt
+    });
+}
+
+ast_node_t* ast_namespace_init(location_t* loc, char* ns_name)
+{
+    return ast_init(AST_NAMESPACE, NULL, loc, &(ast_node_t){
+        .ns_name = ns_name
     });
 }
 
@@ -438,6 +446,7 @@ static void ast_print_recur(ast_node_t* node, int indent)
         {
             indprintf(indent, "AST_ILITERAL {\n");
             indent++;
+            std_ast_print(node, indent);
             indprintf(indent, "ivalue: %i\n", node->ivalue);
             indent--;
             indprintf(indent, "}\n");
@@ -447,6 +456,7 @@ static void ast_print_recur(ast_node_t* node, int indent)
         {
             indprintf(indent, "AST_FLITERAL {\n");
             indent++;
+            std_ast_print(node, indent);
             indprintf(indent, "fvalue: %f\n", node->fvalue);
             indprintf(indent, "flabel: %s\n", node->flabel);
             indent--;
@@ -457,6 +467,7 @@ static void ast_print_recur(ast_node_t* node, int indent)
         {
             indprintf(indent, "AST_SLITERAL {\n");
             indent++;
+            std_ast_print(node, indent);
             indprintf(indent, "svalue: %s\n", node->svalue);
             indprintf(indent, "slabel: %s\n", node->slabel);
             indent--;

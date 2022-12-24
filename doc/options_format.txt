@@ -1,0 +1,6 @@
+[array of null-terminated strings]:
+    length of array [4 bytes]
+    for every element:
+        read null-terminated string
+
+do [array of null-terminated strings] for all import paths

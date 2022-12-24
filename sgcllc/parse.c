@@ -59,19 +59,49 @@ int precedence(int op)
     switch (op)
     {
         case KW_COMMA:
-            return 17;
-        case OP_ASSIGN:
             return 16;
+        case OP_ASSIGN:
+        case OP_ASSIGN_ADD:
+        case OP_ASSIGN_SUB:
+        case OP_ASSIGN_MUL:
+        case OP_ASSIGN_DIV:
+        case OP_ASSIGN_MOD:
+        case OP_ASSIGN_AND:
+        case OP_ASSIGN_OR:
+        case OP_ASSIGN_XOR:
+        case OP_ASSIGN_SHIFT_LEFT:
+        case OP_ASSIGN_SHIFT_RIGHT:
+        case OP_ASSIGN_SHIFT_URIGHT:
+            return 15;
         case OP_EQUAL:
         case OP_NOT_EQUAL:
+            return 14;
+        case OP_GREATER:
+        case OP_GREATER_EQUAL:
+        case OP_LESS:
+        case OP_LESS_EQUAL:
+            return 13;
+        case OP_LOGICAL_OR:
+            return 11;
+        case OP_LOGICAL_AND:
             return 10;
+        case OP_OR:
+            return 9;
+        case OP_XOR:
+            return 8;
+        case OP_AND:
+            return 7;
+        case OP_SHIFT_LEFT:
+        case OP_SHIFT_RIGHT:
+        case OP_SHIFT_URIGHT:
+            return 6;
         case OP_ADD:
         case OP_SUB:
-            return 6;
+            return 5;
         case OP_MUL:
         case OP_DIV:
         case OP_MOD:
-            return 5;
+            return 4;
         case OP_MAKE:
         case OP_NOT:
         case OP_MAGNITUDE:
@@ -122,7 +152,7 @@ datatype_t* get_arith_type(token_t* token)
     return dt;
 }
 
-static datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
+datatype_t* arith_conv(datatype_t* t1, datatype_t* t2)
 {
     if ((t2->size > t1->size && !isfloattype(t1->type)) || (t2->type == DTT_F32 && t1->type != DTT_F64))
     {
@@ -199,7 +229,7 @@ char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blue
         buffer_append(buffer, 'g');
     buffer_append(buffer, '@');
     buffer_string(buffer, func->func_name);
-    for (int i = current_blueprint && func->func_type != 'c' ? 1 : 0; i < func->params->size; i++)
+    for (int i = (current_blueprint && func->func_type != 'c') ? 1 : 0; i < func->params->size; i++)
     {
         buffer_append(buffer, '@');
         ast_node_t* param = vector_get(func->params, i);
@@ -234,6 +264,7 @@ char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blue
             }
         }
     }
+    buffer_append(buffer, '\0');
     return buffer_export(buffer);
 }
 
@@ -268,10 +299,7 @@ static void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vecto
 {
     ast_node_t* extrn = map_get(p->lenv ? p->lenv : p->genv, name);
     if (extrn)
-    {
-        vector_delete(args);
         return;
-    }
     map_put(p->genv, name, vector_push(p->cexterns, ast_builtin_init(dt, name, args, NULL, 'b')));
 }
 
@@ -467,10 +495,10 @@ static bool parser_is_func_definition(parser_t* p)
         if (token->type == TT_KEYWORD && token->id == KW_RPAREN)
             break;
     }
-    token_t* lbrace = parser_far_peek(p, ++i);
-    if (lbrace->type != TT_KEYWORD)
+    token_t* lbrace_or_semicolon = parser_far_peek(p, ++i);
+    if (lbrace_or_semicolon->type != TT_KEYWORD)
         return false;
-    if (lbrace->id != KW_LBRACE)
+    if (lbrace_or_semicolon->id != KW_LBRACE && lbrace_or_semicolon->id != KW_SEMICOLON)
         return false;
     return true;
 }
@@ -660,6 +688,9 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
                 additional->operator = operator->id;
                 break;
             }
+            case KW_LOWLVL:
+                additional->lowlvl = true;
+                break;
             case KW_LBRACK:
             {
                 parser_get(p);
@@ -680,34 +711,69 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
 static ast_node_t* parser_read_import(parser_t* p)
 {
     parser_get(p); // skip import keyword
+    bool namespaced = parser_check(p, KW_NAMESPACED);
+    if (namespaced)
+        parser_get(p);
     token_t* path = parser_expect_type(p, TT_STRING_LITERAL);
-    ast_node_t* node = ast_import_init(path->loc, unwrap_string_literal(path->content));
+    ast_node_t* node = ast_import_init(path->loc, unwrap_string_literal(path->content), namespaced);
     parser_expect(p, ';');
-    char* filepath = malloc(256);
-    sprintf(filepath, "libsgcll/%s.o", node->path);
-    vector_push(p->links, filepath);
-    char* headerpath = malloc(256);
-    sprintf(headerpath, "libsgcll/%s.sgcllh", node->path);
+    char* headerpath = NULL;
+    for (int i = 0; i < options->import_search_paths->size; i++)
+    {
+        char* path = vector_get(options->import_search_paths, i);
+        buffer_t* checkbuf = buffer_init(256, 128);
+        buffer_string(checkbuf, path);
+        buffer_append(checkbuf, '/');
+        buffer_string(checkbuf, node->path);
+        buffer_string(checkbuf, ".o");
+        char* fullpath = buffer_export(checkbuf);
+        buffer_delete(checkbuf);
+        buffer_t* headerbuf = buffer_init(256, 128);
+        buffer_string(headerbuf, path);
+        buffer_append(headerbuf, '/');
+        buffer_string(headerbuf, node->path);
+        buffer_string(headerbuf, ".sgcllh");
+        char* lheaderpath = buffer_export(headerbuf);
+        if (fexists(fullpath) && fexists(lheaderpath))
+        {
+            vector_push(p->links, fullpath);
+            headerpath = lheaderpath;
+            break;
+        }
+        free(fullpath);
+    }
+    if (!headerpath)
+        errorp(path->loc->row, path->loc->col, "could not open a library by the name of '%s'", node->path);
     FILE* header = fopen(headerpath, "rb");
-    char* filename = isolate_filename(headerpath);
-    vector_t* symbols = read_header(header, filename);
+    vector_t* symbols = read_header(header, node->path);
+    char* lowlvl_path = NULL;
     for (int i = 0; i < symbols->size; i++)
     {
-        ast_node_t* node = vector_get(symbols, i);
+        ast_node_t* symbol = vector_get(symbols, i);
         char* name;
-        if (node->type == AST_FUNC_DEFINITION)
+        if (symbol->type == AST_FUNC_DEFINITION)
         {
-            name = node->func_label;
-            vector_t* nonspecific_vec = map_get(p->funcs, node->func_name);
+            name = symbol->func_label;
+            vector_t* nonspecific_vec = map_get(p->funcs, symbol->func_name);
             if (!nonspecific_vec)
-                map_put(p->funcs, node->func_name, vector_qinit(1, node));
+                map_put(p->funcs, symbol->func_name, vector_qinit(1, symbol));
             else
-                vector_push(nonspecific_vec, node);
+                vector_push(nonspecific_vec, symbol);
+            if (symbol->lowlvl_label)
+            {
+                parser_ensure_cextern(p, symbol->lowlvl_label, symbol->datatype, symbol->params);
+                if (!lowlvl_path)
+                {
+                    lowlvl_path = malloc(256);
+                    sprintf(lowlvl_path, "libsgcll/%s_lowlvl.o", node->path);
+                    vector_push(p->links, lowlvl_path);
+                }
+            }
         }
-        else if (node->type == AST_GVAR)
-            name = node->var_name;
-        printf("included symbol from %s: %s\n", filename, name);
-        map_put(p->genv, name, vector_push(p->userexterns, node));
+        else if (symbol->type == AST_GVAR)
+            name = symbol->var_name;
+        printf("included symbol from %s: %s\n", node->path, name);
+        map_put(p->genv, name, vector_push(p->userexterns, symbol));
     }
     vector_delete(symbols);
     return node;
@@ -720,8 +786,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, 'g', func_name_token->content, p->lex->filename);
     func_node->operator = hp->operator;
-    func_node->lowlvl = hp->lowlvl;
-    free(hp);
+    func_node->lowlvl_label = NULL;
     if (!strcmp(func_name_token->content, "constructor"))
     {
         if (p->current_blueprint == NULL)
@@ -773,24 +838,60 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         lvar->voffset = i;
         vector_push(func_node->params, lvar);
     }
-    parser_expect(p, '{');
     func_node->func_label = make_func_label(p->lex->filename, func_node, p->current_blueprint);
     if (map_get(func_host_env, func_node->func_label))
         errorp(func_name_token->loc->row, func_name_token->loc->col, "function is identical to an already-defined function");
     map_put(func_host_env, func_node->func_label, func_node);
     vector_t* nonspecific_vec = map_get(p->funcs, func_node->func_name);
+    int func_index;
     if (!nonspecific_vec)
+    {
         map_put(p->funcs, func_node->func_name, vector_qinit(1, func_node));
+        func_index = 0;
+    }
     else
+    {
         vector_push(nonspecific_vec, func_node);
-    ast_node_t* cf = p->current_func;
-    p->current_func = func_node;
-    parser_read_func_body(p);
-    p->current_func = cf;
+        func_index = nonspecific_vec->size - 1;
+    }
+    if (!hp->lowlvl)
+    {
+        parser_expect(p, '{');
+        ast_node_t* cf = p->current_func;
+        p->current_func = func_node;
+        parser_read_func_body(p);
+        p->current_func = cf;
+    }
+    else
+    {
+        parser_expect(p, ';');
+        int label_len = strlen(func_node->func_label);
+        char* lowlvl_label = malloc(label_len + 1);
+        memcpy(lowlvl_label, func_node->func_label, label_len);
+        lowlvl_label[label_len] = '\0';
+        for (int i = 0; i < label_len + 1; i++)
+        {
+            if (lowlvl_label[i] == '@')
+                lowlvl_label[i] = '_';
+        }
+        parser_ensure_cextern(p, lowlvl_label, dt, func_node->params);
+        func_node->lowlvl_label = lowlvl_label;
+        buffer_t* pathbuffer = buffer_init(50, 15);
+        int i = strlen(p->lex->path) - 1;
+        for (; i >= 0 && (p->lex->path)[i] != '/' && (p->lex->path)[i] != '\\'; i--);
+        if (i < 0)
+            errorp(func_name_token->loc->row, func_name_token->loc->col, "ya path is really messed up boy");
+        buffer_nstring(pathbuffer, p->lex->path, i + 1);
+        buffer_string(pathbuffer, p->lex->filename);
+        buffer_string(pathbuffer, "_lowlvl.o");
+        buffer_append(pathbuffer, '\0');
+        vector_push(p->links, buffer_export(pathbuffer));
+    }
     p->lenv = p->lenv->parent;
     if (p->lenv == p->genv)
         p->lenv = NULL;
     map_delete(func_env);
+    free(hp);
     return func_node;
 }
 
@@ -1167,6 +1268,8 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                 for (int i = 0; i < keys->size; i++) \
                 { \
                     ast_node_t* node = map_get(p->genv, vector_get(keys, i)); \
+                    if (!node) \
+                        continue; \
                     if (node->type != AST_FUNC_DEFINITION) \
                         continue; \
                     datatype_t* rettype = node->datatype; \
@@ -1194,7 +1297,8 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                 vector_t* flavors = map_get(p->funcs, token->content);
                 if (!flavors)
                 {
-                    if (i + 1 < expr_result->size && ((token_t*) vector_get(expr_result, i + 1))->id == OP_SELECTION)
+                    #define binop_chk(op, offset) (i + offset < expr_result->size && ((token_t*) vector_get(expr_result, i + offset))->id == op)
+                    if (binop_chk(OP_SELECTION, 1))
                     {
                         ast_node_t* top = vector_top(stack);
                         ast_node_t* blueprint = map_get(p->lenv ? p->lenv : p->genv, top->datatype->name);
@@ -1204,12 +1308,13 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                             if (!strcmp(inst_var->var_name, token->content))
                             {
                                 vector_push(stack, inst_var);
-                                goto inst_var_success;
+                                goto next_token;
                             }
                         }
-                    } 
+                    }
+                    #undef binop_chk
                     vector_push(stack, ast_get_by_token(p, token));
-inst_var_success:
+next_token:
                     continue;
                 }
                 vector_push(stack, vector_get(flavors, 0));
@@ -1236,6 +1341,24 @@ inst_var_success:
                 case OP_ASSIGN_MOD:
                 case OP_EQUAL:
                 case OP_NOT_EQUAL:
+                case OP_GREATER:
+                case OP_GREATER_EQUAL:
+                case OP_LESS:
+                case OP_LESS_EQUAL:
+                case OP_AND:
+                case OP_OR:
+                case OP_XOR:
+                case OP_ASSIGN_AND:
+                case OP_ASSIGN_OR:
+                case OP_ASSIGN_XOR:
+                case OP_SHIFT_LEFT:
+                case OP_SHIFT_RIGHT:
+                case OP_SHIFT_URIGHT:
+                case OP_ASSIGN_SHIFT_LEFT:
+                case OP_ASSIGN_SHIFT_RIGHT:
+                case OP_ASSIGN_SHIFT_URIGHT:
+                case OP_LOGICAL_AND:
+                case OP_LOGICAL_OR:
                 {
                     ast_node_t* rhs = vector_pop(stack);
                     ast_node_t* lhs = vector_pop(stack);
@@ -1255,7 +1378,17 @@ inst_var_success:
                             break;
                         }
                     , vector_qinit(2, lhs, rhs));
-                    vector_push(stack, ast_binary_op_init(token->id, arith_conv(lhs->datatype, rhs->datatype), token->loc, lhs, rhs));
+                    datatype_t* rettype = arith_conv(lhs->datatype, rhs->datatype);
+                    if (token->id == OP_EQUAL ||
+                        token->id == OP_NOT_EQUAL ||
+                        token->id == OP_GREATER ||
+                        token->id == OP_GREATER_EQUAL ||
+                        token->id == OP_LESS ||
+                        token->id == OP_LESS_EQUAL ||
+                        token->id == OP_LOGICAL_AND ||
+                        token->id == OP_LOGICAL_OR)
+                        rettype = t_bool;
+                    vector_push(stack, ast_binary_op_init(token->id, rettype, token->loc, lhs, rhs));
                     break;
                 }
                 case OP_CAST:

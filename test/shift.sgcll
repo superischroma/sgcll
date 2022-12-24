@@ -1,0 +1,9 @@
+import "io";
+import "string";
+
+i32 main()
+{
+    i64 i = 24;
+    i <<= 2;
+    print("result: " + i);
+}

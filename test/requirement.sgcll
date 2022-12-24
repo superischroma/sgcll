@@ -1,12 +1,10 @@
 import "io";
+import "string";
 
-standard stringable
+requirement stringable
 {
     public string to_string();
 }
-
-public lowlvl operator(+) string concat(string str, i32 x);
-public lowlvl operator(+) string concat(i32 x, string str);
 
 blueprint point follows stringable
 {
@@ -21,7 +19,7 @@ blueprint point follows stringable
 
     public string to_string()
     {
-        return "point{x=" + this.x + ", y=" + this.y + "}";
+        return "point{x=" + (this.x -> i64) + ", y=" + (this.y -> i64) + "}";
     }
 }
 

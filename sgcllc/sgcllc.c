@@ -8,6 +8,7 @@
 
 map_t* keywords;
 map_t* builtins;
+options_t* options;
 
 void set_up_keywords(void)
 {
@@ -56,7 +57,7 @@ vector_t* build(char* path)
     header[pathl] = 'h';
     header[pathl + 1] = '\0';
     FILE* hout = fopen(header, "wb");
-    parser_make_header(parser, hout); // don't generate header rn cuz 
+    parser_make_header(parser, hout);
     fclose(hout);
     free(header);
     char* assembly = calloc(pathl + 1, sizeof(char));
@@ -81,6 +82,9 @@ int main(int argc, char** argv)
         errorc("only one file input is supported currently");
     set_up_keywords();
     set_up_builtins();
+    FILE* options_file = fopen("options", "rb");
+    options = read_options(options_file);
+    fclose(options_file);
     char* path = argv[1];
     int pathl = strlen(path);
     char* assembly = calloc(pathl + 1, sizeof(char));
@@ -98,4 +102,7 @@ int main(int argc, char** argv)
     printf("linker: %s", link);
     system(link);
     free(assembly);
+    options_file = fopen("options", "wb");
+    write_options(options, options_file);
+    fclose(options_file);
 }

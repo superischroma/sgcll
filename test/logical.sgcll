@@ -1,0 +1,11 @@
+import "io";
+
+i32 main()
+{
+    bool b = 0;
+    bool c = 1;
+    if (b && c)
+        print("b && c");
+    if (b || c)
+        print("b || c");
+}
