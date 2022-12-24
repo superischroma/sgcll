@@ -105,6 +105,7 @@ enum {
     OP_SELECTION = '.',
     OP_GREATER = '>',
     OP_LESS = '<',
+    OP_COMPLEMENT = '~',
     AST_FILE = 256,
     AST_STUB,
     AST_IMPORT,

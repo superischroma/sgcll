@@ -106,6 +106,7 @@ int precedence(int op)
         case OP_NOT:
         case OP_MAGNITUDE:
         case OP_CAST:
+        case OP_COMPLEMENT:
             return 3;
         case OP_SUBSCRIPT:
         case OP_SELECTION:
@@ -1431,12 +1432,21 @@ next_token:
                     break;
                 }
                 case OP_MAGNITUDE:
+                case OP_NOT:
+                case OP_COMPLEMENT:
                 {
                     ast_node_t* operand = vector_pop(stack);
                     if (!operand)
                         errorp(token->loc->row, token->loc->col, "expected operand for operator %i", token->id);
-                    vector_push(stack, ast_unary_op_init(token->id, t_ui64, token->loc, operand));
-                    parser_ensure_cextern(p, "__builtin_array_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                    datatype_t* dt = operand->datatype;
+                    if (token->id == OP_MAGNITUDE)
+                    {
+                        parser_ensure_cextern(p, "__builtin_array_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        dt = t_i64;
+                    }
+                    else if (token->id == OP_NOT)
+                        dt = t_bool;
+                    vector_push(stack, ast_unary_op_init(token->id, dt, token->loc, operand));
                     break;
                 }
                 case OP_MAKE:

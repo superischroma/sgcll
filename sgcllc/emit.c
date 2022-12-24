@@ -520,6 +520,20 @@ static void emit_logical_or(emitter_t* e, ast_node_t* op)
     emit_noindent("%s:", skip);
 }
 
+static void emit_logical_not(emitter_t* e, ast_node_t* op)
+{
+    emit_expr(e, op->operand);
+    emit_conv(e, op->operand->datatype, t_bool);
+    emit("cmpb $0, %%al");
+    emit("sete %%al");
+}
+
+static void emit_complement(emitter_t* e, ast_node_t* op)
+{
+    emit_expr(e, op->operand);
+    emit("not%c %%%s", int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
+}
+
 static void emit_shift(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
@@ -769,6 +783,16 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         case OP_LOGICAL_OR:
         {
             emit_logical_or(e, expr);
+            break;
+        }
+        case OP_NOT:
+        {
+            emit_logical_not(e, expr);
+            break;
+        }
+        case OP_COMPLEMENT:
+        {
+            emit_complement(e, expr);
             break;
         }
         case OP_SHIFT_LEFT:
