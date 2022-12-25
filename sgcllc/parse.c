@@ -107,7 +107,12 @@ int precedence(int op)
         case OP_MAGNITUDE:
         case OP_CAST:
         case OP_COMPLEMENT:
+        case OP_MINUS:
+        case OP_PREFIX_INCREMENT:
+        case OP_PREFIX_DECREMENT:
             return 3;
+        case OP_POSTFIX_INCREMENT:
+        case OP_POSTFIX_DECREMENT:
         case OP_SUBSCRIPT:
         case OP_SELECTION:
         case OP_FUNC_CALL:
@@ -1434,6 +1439,11 @@ next_token:
                 case OP_MAGNITUDE:
                 case OP_NOT:
                 case OP_COMPLEMENT:
+                case OP_MINUS:
+                case OP_PREFIX_INCREMENT:
+                case OP_PREFIX_DECREMENT:
+                case OP_POSTFIX_INCREMENT:
+                case OP_POSTFIX_DECREMENT:
                 {
                     ast_node_t* operand = vector_pop(stack);
                     if (!operand)

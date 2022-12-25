@@ -184,7 +184,6 @@ void lex_read_token(lexer_t* lex)
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }
-        case OP_ADD:
         case OP_MUL:
         case OP_MOD:
         case OP_ASSIGN:
@@ -239,8 +238,6 @@ void lex_read_token(lexer_t* lex)
             {
                 switch (c)
                 {
-                    case OP_ADD: c = OP_ASSIGN_ADD; break;
-                    case OP_SUB: c = OP_ASSIGN_SUB; break;
                     case OP_MUL: c = OP_ASSIGN_MUL; break;
                     case OP_MOD: c = OP_ASSIGN_MOD; break;
                     case OP_ASSIGN: c = OP_EQUAL; break;
@@ -258,6 +255,25 @@ void lex_read_token(lexer_t* lex)
         }
         case OP_SUB:
         {
+            if (vector_top(lex->output) != NULL)
+            {
+                token_t* top = vector_top(lex->output);
+                if (top->type == TT_KEYWORD)
+                    c = OP_MINUS;
+                if (lex_peek(lex) == OP_SUB)
+                {
+                    if (top->type == TT_KEYWORD && top->id != ')')
+                    {
+                        c = OP_PREFIX_DECREMENT;
+                        lex_read(lex);
+                    }
+                    else if (top->type == TT_IDENTIFIER || (top->type == TT_KEYWORD && top->id == ')'))
+                    {
+                        c = OP_POSTFIX_DECREMENT;
+                        lex_read(lex);
+                    }
+                }
+            }
             if (lex_peek(lex) == '=')
             {
                 c = OP_ASSIGN_SUB;
@@ -266,6 +282,30 @@ void lex_read_token(lexer_t* lex)
             if (lex_peek(lex) == '>')
             {
                 c = OP_CAST;
+                lex_read(lex);
+            }
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
+            break;
+        }
+        case OP_ADD:
+        {
+            if (lex_peek(lex) == OP_ADD)
+            {
+                token_t* top = vector_top(lex->output);
+                if (top->type == TT_KEYWORD && top->id != ')')
+                {
+                    c = OP_PREFIX_INCREMENT;
+                    lex_read(lex);
+                }
+                else if (top->type == TT_IDENTIFIER || (top->type == TT_KEYWORD && top->id == ')'))
+                {
+                    c = OP_POSTFIX_INCREMENT;
+                    lex_read(lex);
+                }
+            }
+            if (lex_peek(lex) == '=')
+            {
+                c = OP_ASSIGN_ADD;
                 lex_read(lex);
             }
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));

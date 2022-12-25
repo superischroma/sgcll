@@ -1,0 +1,9 @@
+import "io";
+
+i32 main()
+{
+    i64 i = 3L;
+    print(i);
+    i = -i;
+    print(i);
+}

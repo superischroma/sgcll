@@ -528,10 +528,18 @@ static void emit_logical_not(emitter_t* e, ast_node_t* op)
     emit("sete %%al");
 }
 
-static void emit_complement(emitter_t* e, ast_node_t* op)
+static void emit_single_unary(emitter_t* e, ast_node_t* op)
 {
     emit_expr(e, op->operand);
-    emit("not%c %%%s", int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
+    char* operation = NULL;
+    switch (op->type)
+    {
+        case OP_COMPLEMENT: operation = "not"; break;
+        case OP_MINUS: operation = "neg"; break;
+        default:
+            errore(op->loc->row, op->loc->col, "unknown operation");
+    }
+    emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
 }
 
 static void emit_shift(emitter_t* e, ast_node_t* op)
@@ -790,9 +798,38 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             emit_logical_not(e, expr);
             break;
         }
+        case OP_MINUS:
         case OP_COMPLEMENT:
         {
-            emit_complement(e, expr);
+            emit_single_unary(e, expr);
+            break;
+        }
+        case OP_PREFIX_INCREMENT:
+        case OP_PREFIX_DECREMENT:
+        {
+            ast_node_t* operation = ast_binary_op_init(expr->type == OP_PREFIX_INCREMENT ? OP_ASSIGN_ADD : OP_ASSIGN_SUB,
+                expr->operand->datatype, expr->loc, expr->operand, ast_iliteral_init(t_i64, expr->loc, 1LL));
+            emit_expr(e, operation);
+            // delete?
+            break;
+        }
+        case OP_POSTFIX_INCREMENT:
+        case OP_POSTFIX_DECREMENT:
+        {
+            emit_expr(e, expr->operand);
+            char* regA = find_register(REG_A, expr->datatype->size);
+            if (isfloattype(expr->datatype->type))
+                emitter_stash_float_reg(e, "xmm0", expr->datatype->size);
+            else
+                emitter_stash_int_reg(e, regA);
+            ast_node_t* operation = ast_binary_op_init(expr->type == OP_POSTFIX_INCREMENT ? OP_ASSIGN_ADD : OP_ASSIGN_SUB,
+                expr->operand->datatype, expr->loc, expr->operand, ast_iliteral_init(t_i64, expr->loc, 1LL));
+            emit_expr(e, operation);
+            if (isfloattype(expr->datatype->type))
+                emit("movs%c %%%s, %%xmm0", floatsize(expr->datatype->size), emitter_restore_float_reg(e, expr->datatype->size));
+            else
+                emit("mov%c %%%s, %%%s", int_reg_size(expr->datatype->size), emitter_restore_int_reg(e, expr->datatype->size), regA);
+            // delete?
             break;
         }
         case OP_SHIFT_LEFT:
