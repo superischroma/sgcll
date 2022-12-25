@@ -81,6 +81,8 @@ int precedence(int op)
         case OP_LESS:
         case OP_LESS_EQUAL:
             return 13;
+        case OP_SPACESHIP:
+            return 12;
         case OP_LOGICAL_OR:
             return 11;
         case OP_LOGICAL_AND:
@@ -934,7 +936,7 @@ static void parser_read_func_body(parser_t* p)
             vector_push(p->current_func->local_variables, stmt);
         vector_push(p->current_func->body->statements, stmt);
         if (parser_check(p, '}') && stmt->type != AST_RETURN && p->current_func->datatype->type != DTT_VOID) // no return statement
-            vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, ast_iliteral_init(p->current_func->datatype, stmt->loc, 0)));
+            vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, ast_iliteral_init(p->current_func->datatype, stmt->loc, 0), p->current_func));
         else if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
             errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
     }
@@ -1074,7 +1076,7 @@ static ast_node_t* parser_read_return_statement(parser_t* p)
 {
     parser_expect(p, KW_RETURN);
     ast_node_t* expr = parser_read_expr(p, ';');
-    return ast_return_init(p->current_func->datatype, expr->loc, expr->datatype != p->current_func->datatype ? ast_cast_init(p->current_func->datatype, expr->loc, expr) : expr);
+    return ast_return_init(p->current_func->datatype, expr->loc, expr->datatype != p->current_func->datatype ? ast_cast_init(p->current_func->datatype, expr->loc, expr) : expr, p->current_func);
 }
 
 static bool parser_is_enter_statement(parser_t* p)
@@ -1265,9 +1267,7 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
             printf("result[%i] = %c (id: %i)\n", i, token->id, token->id);
     }
     printf("----- end results\n");
-    #define check_binary_operator_overloads(lhs, rhs, chk, cargs) \
-        if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
-            lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING)) \
+    #define operator_overload_body(chk, cargs) \
             { \
                 vector_t* keys = map_keys(p->genv); \
                 ast_node_t* found = NULL; \
@@ -1283,10 +1283,17 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                 } \
                 vector_delete(keys); \
                 if (!found) \
-                    errorp(token->loc->row, token->loc->col, "no operator overload available for the specified arguments"); \
+                    errorp(token->loc->row, token->loc->col, "no operator overload for %i with the specified arguments", token->id); \
                 vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, cargs)); \
                 break; \
             }
+    #define check_binary_operator_overloads(lhs, rhs, chk, cargs) \
+        if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
+            lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING)) \
+            operator_overload_body(chk, cargs)
+    #define check_unary_operator_overloads(operand, chk, cargs) \
+        if (operand->datatype->type == DTT_OBJECT || operand->datatype->type == DTT_STRING) \
+            operator_overload_body(chk, cargs)
     for (int i = 0; i < expr_result->size; i++)
     {
         token_t* token = (token_t*) vector_get(expr_result, i);
@@ -1365,6 +1372,9 @@ next_token:
                 case OP_ASSIGN_SHIFT_URIGHT:
                 case OP_LOGICAL_AND:
                 case OP_LOGICAL_OR:
+                case OP_SPACESHIP:
+                case OP_SUBSCRIPT:
+                case OP_SELECTION:
                 {
                     ast_node_t* rhs = vector_pop(stack);
                     ast_node_t* lhs = vector_pop(stack);
@@ -1394,7 +1404,14 @@ next_token:
                         token->id == OP_LOGICAL_AND ||
                         token->id == OP_LOGICAL_OR)
                         rettype = t_bool;
-                    vector_push(stack, ast_binary_op_init(token->id, rettype, token->loc, lhs, rhs));
+                    ast_node_type type = token->id;
+                    if (type == OP_SPACESHIP)
+                        type = OP_SUB;
+                    else if (type == OP_SUBSCRIPT)
+                        rettype = lhs->datatype->array_type;
+                    else if (type == OP_SELECTION)
+                        rettype = rhs->datatype;
+                    vector_push(stack, ast_binary_op_init(type, rettype, token->loc, lhs, rhs));
                     break;
                 }
                 case OP_CAST:
@@ -1418,24 +1435,6 @@ next_token:
                     vector_push(stack, ast_cast_init(type->datatype, token->loc, castval));
                     break;
                 }
-                case OP_SUBSCRIPT:
-                {
-                    ast_node_t* index = vector_pop(stack);
-                    ast_node_t* symbol = vector_pop(stack);
-                    if (!symbol || !index)
-                        errorp(token->loc->row, token->loc->col, "expected 2 operands for subscript operator");
-                    vector_push(stack, ast_binary_op_init(token->id, symbol->datatype->array_type, token->loc, symbol, index));
-                    break;
-                }
-                case OP_SELECTION:
-                {
-                    ast_node_t* member = vector_pop(stack);
-                    ast_node_t* obj = vector_pop(stack);
-                    if (!member || !obj)
-                        errorp(token->loc->row, token->loc->col, "expected 2 operands for selection operator");
-                    vector_push(stack, ast_binary_op_init(token->id, member->datatype, token->loc, obj, member));
-                    break;
-                }
                 case OP_MAGNITUDE:
                 case OP_NOT:
                 case OP_COMPLEMENT:
@@ -1456,6 +1455,16 @@ next_token:
                     }
                     else if (token->id == OP_NOT)
                         dt = t_bool;
+                    check_unary_operator_overloads(operand, 
+                        if (node->params->size != 1)
+                            continue;
+                        ast_node_t* func_lhs = vector_get(node->params, 0);
+                        if (node->operator == token->id && same_datatype(p, operand->datatype, func_lhs->datatype))
+                        {
+                            found = node;
+                            break;
+                        }
+                    , vector_qinit(1, operand));
                     vector_push(stack, ast_unary_op_init(token->id, dt, token->loc, operand));
                     break;
                 }

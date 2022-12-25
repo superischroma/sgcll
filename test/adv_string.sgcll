@@ -1,0 +1,11 @@
+import "io";
+import "string";
+
+i32 main()
+{
+    string str = "hello";
+    if (str == "hi")
+        print("equal!");
+    else
+        print("not equal...");
+}

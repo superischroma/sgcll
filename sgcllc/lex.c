@@ -184,12 +184,36 @@ void lex_read_token(lexer_t* lex)
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }
+        case OP_LESS:
+        {
+            if (lex_peek(lex) == OP_LESS)
+            {
+                c = OP_SHIFT_LEFT;
+                lex_read(lex);
+                if (lex_peek(lex) == OP_ASSIGN)
+                {
+                    c = OP_ASSIGN_SHIFT_LEFT;
+                    lex_read(lex);
+                }
+            }
+            if (lex_peek(lex) == '=')
+            {
+                c = OP_LESS_EQUAL;
+                lex_read(lex);
+                if (lex_peek(lex) == OP_GREATER)
+                {
+                    c = OP_SPACESHIP;
+                    lex_read(lex);
+                }
+            }
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
+            break;
+        }
         case OP_MUL:
         case OP_MOD:
         case OP_ASSIGN:
         case OP_NOT:
         case OP_GREATER:
-        case OP_LESS:
         case OP_AND:
         case OP_OR:
         case OP_XOR:
@@ -214,16 +238,6 @@ void lex_read_token(lexer_t* lex)
                     lex_read(lex);
                 }
             }
-            if (c == OP_LESS && lex_peek(lex) == OP_LESS)
-            {
-                c = OP_SHIFT_LEFT;
-                lex_read(lex);
-                if (lex_peek(lex) == OP_ASSIGN)
-                {
-                    c = OP_ASSIGN_SHIFT_LEFT;
-                    lex_read(lex);
-                }
-            }
             if (c == OP_OR && lex_peek(lex) == OP_OR)
             {
                 c = OP_LOGICAL_OR;
@@ -243,7 +257,6 @@ void lex_read_token(lexer_t* lex)
                     case OP_ASSIGN: c = OP_EQUAL; break;
                     case OP_NOT: c = OP_NOT_EQUAL; break;
                     case OP_GREATER: c = OP_GREATER_EQUAL; break;
-                    case OP_LESS: c = OP_LESS_EQUAL; break;
                     case OP_AND: c = OP_ASSIGN_AND; break;
                     case OP_OR: c = OP_ASSIGN_OR; break;
                     case OP_XOR: c = OP_ASSIGN_XOR; break;

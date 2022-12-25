@@ -256,6 +256,7 @@ typedef struct ast_node_t
             char* lowlvl_label;
             struct ast_node_t* body;
             int operator;
+            char* end_label;
         };
         // AST_FUNC_CALL
         struct
@@ -297,7 +298,11 @@ typedef struct ast_node_t
             bool namespaced;
         };
         // AST_RETURN
-        struct ast_node_t* retval;
+        struct
+        {
+            struct ast_node_t* retval;
+            struct ast_node_t* retfunc;
+        };
         // AST_DELETE
         struct ast_node_t* delsym;
         // AST_BLOCK
@@ -462,7 +467,7 @@ ast_node_t* ast_sliteral_init(datatype_t* dt, location_t* loc, char* svalue, cha
 ast_node_t* ast_binary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* lhs, ast_node_t* rhs);
 ast_node_t* ast_func_call_init(datatype_t* dt, location_t* loc, ast_node_t* func, vector_t* args);
 ast_node_t* ast_fliteral_init(datatype_t* dt, location_t* loc, double fvalue, char* flabel);
-ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval);
+ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval, ast_node_t* retfunc);
 ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval);
 ast_node_t* ast_if_init(datatype_t* dt, location_t* loc, ast_node_t* if_cond);
 ast_node_t* ast_while_init(datatype_t* dt, location_t* loc, ast_node_t* while_cond);

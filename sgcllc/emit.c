@@ -239,6 +239,8 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
         emit_stmt(e, vector_get(func_definition->body->statements, i));
     if (func_definition->func_type == 'c')
         emit("movq -8(%%rbp), %%rax"); // return the object
+    if (func_definition->end_label)
+        emit_noindent("%s:", func_definition->end_label);
     emit("addq $%i, %%rsp", stackalloc);
     e->stackoffset = 0;
     emit("popq %%rbp");
@@ -929,6 +931,8 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt)
         case AST_RETURN:
         {
             emit_expr(e, stmt->retval);
+            char* end_label = stmt->retfunc->end_label ? stmt->retfunc->end_label : (stmt->retfunc->end_label = make_label(e->p, NULL));
+            emit("jmp %s", end_label);
             break;
         }
         case AST_IF:

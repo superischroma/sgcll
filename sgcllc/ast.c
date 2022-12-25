@@ -47,7 +47,8 @@ ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_
         .extrn = '\0',
         .params = vector_init(10, 3),
         .local_variables = vector_init(10, 5),
-        .body = ast_block_init(loc)
+        .body = ast_block_init(loc),
+        .end_label = NULL
     });
 }
 
@@ -121,10 +122,11 @@ ast_node_t* ast_unary_op_init(ast_node_type type, datatype_t* dt, location_t* lo
     });
 }
 
-ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval)
+ast_node_t* ast_return_init(datatype_t* dt, location_t* loc, ast_node_t* retval, ast_node_t* retfunc)
 {
     return ast_init(AST_RETURN, dt, loc, &(ast_node_t){
-        .retval = retval
+        .retval = retval,
+        .retfunc = retfunc
     });
 }
 

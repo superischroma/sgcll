@@ -25,3 +25,13 @@ char* string_g_concat_i64_string(long long lhs, char* rhs)
     __builtin_i64_dec_itos(lhs, buffer);
     return string_g_concat_string_string(buffer, rhs);
 }
+
+long long string_g_length_string(char* str)
+{
+    return __builtin_string_length(str);
+}
+
+char string_g_char_at_string_i64(char* lhs, long long rhs)
+{
+    return lhs[rhs];
+}

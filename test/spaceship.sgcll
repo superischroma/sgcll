@@ -1,0 +1,6 @@
+import "io";
+
+i32 main()
+{
+    print(5L <=> 3L);
+}
