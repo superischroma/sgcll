@@ -106,6 +106,8 @@ enum {
     OP_GREATER = '>',
     OP_LESS = '<',
     OP_COMPLEMENT = '~',
+    OP_TERNARY_Q = '?',
+    OP_TERNARY_C = ':',
     AST_FILE = 256,
     AST_STUB,
     AST_IMPORT,
@@ -126,6 +128,7 @@ enum {
     AST_MAKE,
     AST_BLUEPRINT,
     AST_NAMESPACE,
+    AST_TERNARY,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -320,6 +323,13 @@ typedef struct ast_node_t
         };
         // AST_NAMESPACE
         char* ns_name;
+        // AST_TERNARY
+        struct
+        {
+            struct ast_node_t* tern_cond;
+            struct ast_node_t* tern_then;
+            struct ast_node_t* tern_els;
+        };
     };
 } ast_node_t;
 
@@ -478,6 +488,7 @@ ast_node_t* ast_make_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_unary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* operand);
 ast_node_t* ast_blueprint_init(location_t* loc, char* bp_name, datatype_t* dt);
 ast_node_t* ast_namespace_init(location_t* loc, char* ns_name);
+ast_node_t* ast_ternary_init(datatype_t* dt, location_t* loc, ast_node_t* cond, ast_node_t* then, ast_node_t* els);
 void ast_print(ast_node_t* node);
 void print_datatype(datatype_t* dt);
 

@@ -725,6 +725,22 @@ static void emit_delete_statement(emitter_t* e, ast_node_t* stmt)
     }
 }
 
+static void emit_ternary(emitter_t* e, ast_node_t* expr)
+{
+    emit_expr(e, expr->tern_cond);
+    emit("cmp%c $0, %%%s", int_reg_size(expr->tern_cond->datatype->size), find_register(REG_A, expr->tern_cond->datatype->size));
+    char* skip = make_label(e->p, NULL);
+    emit("je %s", skip);
+    emit_expr(e, expr->tern_then);
+    emit_conv(e, expr->tern_then->datatype, expr->datatype);
+    char* skip_els = make_label(e->p, NULL);
+    emit("jmp %s", skip_els);
+    emit_noindent("%s:", skip);
+    emit_expr(e, expr->tern_els);
+    emit_conv(e, expr->tern_els->datatype, expr->datatype);
+    emit_noindent("%s:", skip_els);
+}
+
 static void emit_expr(emitter_t* e, ast_node_t* expr)
 {
     switch (expr->type)
@@ -898,6 +914,11 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         case AST_MAKE:
         {
             emit_make(e, expr);
+            break;
+        }
+        case AST_TERNARY:
+        {
+            emit_ternary(e, expr);
             break;
         }
         case OP_MAGNITUDE:

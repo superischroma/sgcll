@@ -59,7 +59,7 @@ int precedence(int op)
     switch (op)
     {
         case KW_COMMA:
-            return 16;
+            return 17;
         case OP_ASSIGN:
         case OP_ASSIGN_ADD:
         case OP_ASSIGN_SUB:
@@ -72,6 +72,9 @@ int precedence(int op)
         case OP_ASSIGN_SHIFT_LEFT:
         case OP_ASSIGN_SHIFT_RIGHT:
         case OP_ASSIGN_SHIFT_URIGHT:
+            return 16;
+        case OP_TERNARY_Q:
+        case OP_TERNARY_C:
             return 15;
         case OP_EQUAL:
         case OP_NOT_EQUAL:
@@ -1489,6 +1492,16 @@ next_token:
                     }
                     vector_push(stack, ast_make_init(dt, token->loc));
                     parser_ensure_cextern(p, "__builtin_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                    break;
+                }
+                case OP_TERNARY_Q:
+                {
+                    ast_node_t* els = vector_pop(stack);
+                    ast_node_t* then = vector_pop(stack);
+                    ast_node_t* cond = vector_pop(stack);
+                    if (!els || !then || !cond)
+                        errorp(token->loc->row, token->loc->col, "expected 3 operands for ternary operator");
+                    vector_push(stack, ast_ternary_init(arith_conv(then->datatype, els->datatype), token->loc, cond, then, els));
                     break;
                 }
                 case OP_FUNC_CALL:

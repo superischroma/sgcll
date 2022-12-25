@@ -198,6 +198,15 @@ ast_node_t* ast_namespace_init(location_t* loc, char* ns_name)
     });
 }
 
+ast_node_t* ast_ternary_init(datatype_t* dt, location_t* loc, ast_node_t* cond, ast_node_t* then, ast_node_t* els)
+{
+    return ast_init(AST_TERNARY, dt, loc, &(ast_node_t){
+        .tern_cond = cond,
+        .tern_then = then,
+        .tern_els = els
+    });
+}
+
 static void ast_print_datatype(datatype_t* dt, int indent)
 {
     if (!dt) return;
@@ -522,6 +531,30 @@ static void ast_print_recur(ast_node_t* node, int indent)
             indprintf(indent, "otherwise: {\n");
             indent++;
             ast_print_recur(node->if_els, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indent--;
+            indprintf(indent, "}\n");
+            break;
+        }
+        case AST_TERNARY:
+        {
+            indprintf(indent, "AST_TERNARY {\n");
+            indent++;
+            std_ast_print(node, indent);
+            indprintf(indent, "condition: {\n");
+            indent++;
+            ast_print_recur(node->tern_cond, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indprintf(indent, "then: {\n");
+            indent++;
+            ast_print_recur(node->tern_then, indent);
+            indent--;
+            indprintf(indent, "}\n");
+            indprintf(indent, "else: {\n");
+            indent++;
+            ast_print_recur(node->tern_els, indent);
             indent--;
             indprintf(indent, "}\n");
             indent--;

@@ -180,6 +180,8 @@ void lex_read_token(lexer_t* lex)
         case OP_MAGNITUDE:
         case OP_SELECTION: // i'll have to change this eventually for varargs
         case OP_COMPLEMENT:
+        case OP_TERNARY_Q:
+        case OP_TERNARY_C:
         {
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
