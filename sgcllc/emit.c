@@ -447,14 +447,15 @@ static void emit_conditional(emitter_t* e, ast_node_t* op)
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
     datatype_t* agreed_type = arith_conv(lhs->datatype, rhs->datatype);
     char* operation = NULL;
+    bool ftype = isfloattype(agreed_type->type);
     switch (op->type)
     {
         case OP_EQUAL: operation = "sete"; break;
         case OP_NOT_EQUAL: operation = "setne"; break;
-        case OP_GREATER: operation = "seta"; break;
-        case OP_GREATER_EQUAL: operation = "setae"; break;
-        case OP_LESS: operation = "setb"; break;
-        case OP_LESS_EQUAL: operation = "setbe"; break;
+        case OP_GREATER: operation = ftype ? "seta" : "setg"; break;
+        case OP_GREATER_EQUAL: operation = ftype ? "setae" : "setge"; break;
+        case OP_LESS: operation = ftype ? "setb" : "setl"; break;
+        case OP_LESS_EQUAL: operation = ftype ? "setbe" : "setle"; break;
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
@@ -462,13 +463,13 @@ static void emit_conditional(emitter_t* e, ast_node_t* op)
     char* regAb = find_register(REG_A, 1);
     emit_expr(e, rhs);
     emit_conv(e, rhs->datatype, agreed_type);
-    if (!isfloattype(agreed_type->type))
+    if (!ftype)
         emitter_stash_int_reg(e, regA); // rhs stashed
     else
         emitter_stash_float_reg(e, "xmm0", agreed_type->size);
     emit_expr(e, lhs);
     emit_conv(e, lhs->datatype, agreed_type);
-    if (!isfloattype(agreed_type->type))
+    if (!ftype)
         emit("cmp%c %%%s, %%%s", int_reg_size(agreed_type->size), emitter_restore_int_reg(e, agreed_type->size), regA);
     else
         emit("comis%c %%%s, %%xmm0", floatsize(agreed_type->size), emitter_restore_float_reg(e, agreed_type->size));
