@@ -552,9 +552,9 @@ static bool parser_is_header_statement(parser_t* p, int kw)
     return parser_check(p, kw);
 }
 
-static ast_node_t* parser_read_if_statement(parser_t* p)
+static ast_node_t* parser_read_if_statement(parser_t* p, bool elif)
 {
-    token_t* if_keyword = parser_expect(p, KW_IF);
+    token_t* if_keyword = parser_expect(p, elif ? KW_ELIF : KW_IF);
     parser_expect(p, '(');
     ast_node_t* condition = parser_read_expr(p, ')');
     parser_expect(p, ')');
@@ -578,6 +578,8 @@ static ast_node_t* parser_read_if_statement(parser_t* p)
         else
             vector_push(if_stmt->if_els->statements, parser_read_stmt(p));
     }
+    else if (parser_check(p, KW_ELIF))
+        vector_push(if_stmt->if_els->statements, parser_read_if_statement(p, true));
     return if_stmt;
 }
 
@@ -1120,7 +1122,7 @@ static ast_node_t* parser_read_stmt(parser_t* p)
     if (parser_is_delete_statement(p))
         return parser_read_delete_statement(p);
     if (parser_is_header_statement(p, KW_IF))
-        return parser_read_if_statement(p);
+        return parser_read_if_statement(p, false);
     if (parser_is_header_statement(p, KW_WHILE))
         return parser_read_while_statement(p);
     if (parser_is_header_statement(p, KW_FOR))

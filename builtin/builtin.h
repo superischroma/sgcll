@@ -6,6 +6,15 @@ typedef unsigned long size_t;
 #define __builtin_abs(x) ((x) < 0 ? -(x) : (x))
 #define __builtin_fmod(x, y) (x - y * (int) (x / y))
 
+typedef struct intmap_t
+{
+    int* key;
+    void** value;
+    int size;
+    int capacity;
+    struct intmap_t* parent;
+} intmap_t;
+
 // only use this if you know what you're doing!!
 #define __builtin_varadic NULL; \
     __asm__("   leaq 32(%rbp), %rax\n" \

@@ -110,6 +110,8 @@ static ast_node_t* impl_readfunc(FILE* in, char* filename, char* ident, ast_node
         }
         node->lowlvl_label = lowlvl_label;
     }
+    else
+        node->lowlvl_label = NULL;
     return node;
 }
 

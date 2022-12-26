@@ -1,0 +1,13 @@
+import "io";
+
+i32 main()
+{
+    i32 i = 5;
+    if (i == 5)
+        i = 6;
+    elif (i == 6)
+        i = 9;
+    else
+        i = 10;
+    print(i -> i64);
+}
