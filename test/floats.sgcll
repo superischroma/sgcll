@@ -3,5 +3,5 @@ import "io";
 i32 main()
 {
     f64 d = 1.2;
-    print(d);
+    println(d);
 }

@@ -46,12 +46,6 @@ datatype_t* t_object = &(datatype_t){ VT_PUBLIC, DTT_OBJECT, 8, false };
 void set_up_builtins(void)
 {
     builtins = map_init(NULL, 15);
-    map_put(builtins, "__builtin_i32_println", ast_builtin_init(t_void, "__builtin_i32_println",
-        vector_qinit(1, ast_lvar_init(t_i32, NULL, "i", NULL, NULL)), NULL, 'b'));
-    map_put(builtins, "__builtin_f32_println", ast_builtin_init(t_void, "__builtin_f32_println",
-        vector_qinit(1, ast_lvar_init(t_f32, NULL, "f", NULL, NULL)), NULL, 'b'));
-    map_put(builtins, "__builtin_string_println", ast_builtin_init(t_void, "__builtin_string_println",
-        vector_qinit(1, ast_lvar_init(t_string, NULL, "str", NULL, NULL)), NULL, 'b'));
 }
 
 int precedence(int op)
@@ -341,6 +335,18 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
         {
             char* label = make_label(p, token->content);
             return ast_sliteral_init(t_string, token->loc, token->content, label);
+        }
+        case TT_KEYWORD:
+        {
+            switch (token->id)
+            {
+                case KW_TRUE:
+                    return ast_iliteral_init(t_bool, token->loc, 1LL);
+                case KW_FALSE:
+                    return ast_iliteral_init(t_bool, token->loc, 0LL);
+                default:
+                    errorp(token->loc->row, token->loc->col, "unknown token");
+            }
         }
         default:
             errorp(token->loc->row, token->loc->col, "unknown token");
@@ -941,7 +947,12 @@ static void parser_read_func_body(parser_t* p)
             vector_push(p->current_func->local_variables, stmt);
         vector_push(p->current_func->body->statements, stmt);
         if (parser_check(p, '}') && stmt->type != AST_RETURN && p->current_func->datatype->type != DTT_VOID) // no return statement
-            vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, ast_iliteral_init(p->current_func->datatype, stmt->loc, 0), p->current_func));
+        {
+            if (p->current_func->func_type == 'c')
+                vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, vector_get(p->current_func->local_variables, 0), p->current_func));
+            else
+                vector_push(p->current_func->body->statements, ast_return_init(p->current_func->datatype, stmt->loc, ast_iliteral_init(p->current_func->datatype, stmt->loc, 0), p->current_func));
+        }
         else if (!parser_check(p, '}') && stmt->type == AST_RETURN) // early return statement
             errorp(stmt->loc->row, stmt->loc->col, "return statement is not at the end of the block");
     }
@@ -1158,6 +1169,8 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
             }
             vector_push(expr_result, token);
         }
+        else if (token->id == KW_TRUE || token->id == KW_FALSE)
+            vector_push(expr_result, token);
         else if (token->id == '(')
         {
             token_t* prev = parser_far_peek(p, -1);
@@ -1346,6 +1359,12 @@ next_token:
         {
             switch (token->id)
             {
+                case KW_TRUE:
+                case KW_FALSE:
+                {
+                    vector_push(stack, ast_get_by_token(p, token));
+                    break;
+                }
                 case OP_ASSIGN:
                 case OP_ADD:
                 case OP_SUB:
@@ -1379,7 +1398,6 @@ next_token:
                 case OP_LOGICAL_OR:
                 case OP_SPACESHIP:
                 case OP_SUBSCRIPT:
-                case OP_SELECTION:
                 {
                     ast_node_t* rhs = vector_pop(stack);
                     ast_node_t* lhs = vector_pop(stack);
@@ -1414,9 +1432,16 @@ next_token:
                         type = OP_SUB;
                     else if (type == OP_SUBSCRIPT)
                         rettype = lhs->datatype->array_type;
-                    else if (type == OP_SELECTION)
-                        rettype = rhs->datatype;
                     vector_push(stack, ast_binary_op_init(type, rettype, token->loc, lhs, rhs));
+                    break;
+                }
+                case OP_SELECTION:
+                {
+                    ast_node_t* member = vector_pop(stack);
+                    ast_node_t* obj = vector_pop(stack);
+                    if (!member || !obj)
+                        errorp(token->loc->row, token->loc->col, "expected 2 operands for selection operator");
+                    vector_push(stack, ast_binary_op_init(token->id, member->datatype, token->loc, obj, member));
                     break;
                 }
                 case OP_CAST:

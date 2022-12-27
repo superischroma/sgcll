@@ -19,9 +19,9 @@ blueprint point
 i32 main()
 {
     point p = point(5, 3);
-    __builtin_i32_println(p.x);
-    __builtin_i32_println(p.y);
+    println(p.x -> i64);
+    println(p.y -> i64);
     p.add(5);
-    __builtin_i32_println(p.x);
-    __builtin_i32_println(p.y);
+    println(p.x -> i64);
+    println(p.y -> i64);
 }

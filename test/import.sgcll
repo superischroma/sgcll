@@ -3,5 +3,5 @@ import "io";
 i32 main()
 {
     string str = "hi";
-    print(str);
+    println(str);
 }

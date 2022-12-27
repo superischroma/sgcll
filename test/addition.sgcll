@@ -1,5 +1,7 @@
+import "io";
+
 i32 main()
 {
-    i32 i = 3;
-    __builtin_i32_println(i);
+    i64 i = 3L;
+    println(i + 3L);
 }

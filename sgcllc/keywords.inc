@@ -30,6 +30,10 @@ keyword(KW_UNSIGNED, "unsigned", 0b10)
 keyword(KW_BLUEPRINT, "blueprint", 0b00)
 keyword(KW_OPERATOR, "operator", 0b10)
 keyword(KW_LOWLVL, "lowlvl", 0b10)
+keyword(KW_TRUE, "true", 0b00)
+keyword(KW_FALSE, "false", 0b00)
+keyword(KW_NULL, "null", 0b00)
+keyword(KW_NIL, "nil", 0b00)
 
 // operators
 keyword(OP_ASSIGN_ADD, "+=", 0b00)

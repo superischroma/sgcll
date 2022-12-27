@@ -5,7 +5,7 @@ i32 main()
 {
     string str = "hello";
     if (str == "hi")
-        print("equal!");
+        println("equal!");
     else
-        print("not equal...");
+        println("not equal...");
 }

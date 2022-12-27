@@ -1,10 +1,11 @@
+import "io";
 // integer math tests
 
 i32 main()
 {
-    /* addition */ __builtin_i32_println(5 + 3);
-    /* subtraction */ __builtin_i32_println(5 - 3);
-    /* multiplication */ __builtin_i32_println(5 * 3);
-    /* division */ __builtin_i32_println(8 / 2);
-    /* modulo */ __builtin_i32_println(5 % 3);
+    /* addition */ println(5L + 3L);
+    /* subtraction */ println(5L - 3L);
+    /* multiplication */ println(5L * 3L);
+    /* division */ println(8L / 2L);
+    /* modulo */ println(5L % 3L);
 }

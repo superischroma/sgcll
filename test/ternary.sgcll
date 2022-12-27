@@ -4,5 +4,5 @@ i32 main()
 {
     i32 i = 3;
     i32 j = i > 3 ? 5 + 5 : 6 + 7;
-    print(j -> i64);
+    println(j -> i64);
 }

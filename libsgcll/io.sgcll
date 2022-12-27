@@ -1,3 +1,3 @@
-public lowlvl print(string str);
-public lowlvl print(i64 i);
-public lowlvl print(f64 d);
+public lowlvl println(string str);
+public lowlvl println(i64 i);
+public lowlvl println(f64 d);

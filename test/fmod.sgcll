@@ -1,3 +1,5 @@
+import "io";
+
 f64 fmod(f64 x, f64 y)
 {
     i32 i = x / y;
@@ -6,5 +8,5 @@ f64 fmod(f64 x, f64 y)
 
 i32 main()
 {
-    __builtin_f32_println(fmod(5.3, 3.2));
+    println(fmod(5.3, 3.2));
 }

@@ -237,8 +237,6 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
     }
     for (int i = 0; i < func_definition->body->statements->size; i++)
         emit_stmt(e, vector_get(func_definition->body->statements, i));
-    if (func_definition->func_type == 'c')
-        emit("movq -8(%%rbp), %%rax"); // return the object
     if (func_definition->end_label)
         emit_noindent("%s:", func_definition->end_label);
     emit("addq $%i, %%rsp", stackalloc);

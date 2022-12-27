@@ -1,9 +1,11 @@
+import "io";
+
 i32 main()
 {
     i32 i = 3;
     while (i)
     {
-        __builtin_i32_println(i);
-        i -= 1;
+        println(i -> i64);
+        --i;
     }
 }

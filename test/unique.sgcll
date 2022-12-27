@@ -1,3 +1,5 @@
+import "io";
+
 i32 sum(i32 a, i32 b)
 {
     return a + b;
@@ -10,6 +12,6 @@ f32 sum(f32 a, f32 b)
 
 i32 main()
 {
-    __builtin_f32_println(sum(5.3f, 5.0f));
-    __builtin_i32_println(sum(5, 3));
+    println(sum(5.3f, 5.0f) -> f64);
+    println(sum(5, 3) -> i64);
 }

@@ -4,5 +4,5 @@ import "io";
 
 i32 begin()
 {
-    print("hi!");
+    println("hi!");
 }

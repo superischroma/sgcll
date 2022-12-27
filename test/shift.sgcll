@@ -2,6 +2,6 @@ import "io";
 
 i32 main()
 {
-    print(-3L >> 3);
-    print(-3L >>> 3);
+    println(-3L >> 3);
+    println(-3L >>> 3);
 }

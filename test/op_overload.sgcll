@@ -1,3 +1,5 @@
+import "io";
+
 blueprint point
 {
     public x;
@@ -20,9 +22,9 @@ public operator(+=) point _(point p, i32 delta)
 i32 main()
 {
     point p = point(5, 3);
-    __builtin_i32_println(p.x);
-    __builtin_i32_println(p.y);
+    println(p.x -> i64);
+    println(p.y -> i64);
     p += 5;
-    __builtin_i32_println(p.x);
-    __builtin_i32_println(p.y);
+    println(p.x -> i64);
+    println(p.y -> i64);
 }

@@ -1,5 +1,7 @@
+import "io";
+
 i32 main()
 {
     i32 i = ((5 + 3) * 6) / 8;
-    __builtin_i32_println(i);
+    println(i -> i64);
 }

@@ -1,0 +1,11 @@
+import "io";
+
+i32 main()
+{
+    bool t = true;
+    bool f = false;
+    if (t)
+        println("true!");
+    if (f)
+        println("false!");
+}

@@ -4,7 +4,7 @@ i32 main()
 {
     i32 f = 5;
     if (f < 6)
-        print("yes (5.6f < 6.0f)");
+        println("yes (5.6f < 6.0f)");
     else
-        print("not (5.6f >= 6.0f)");
+        println("not (5.6f >= 6.0f)");
 }

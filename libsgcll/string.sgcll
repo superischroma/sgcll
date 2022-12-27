@@ -8,9 +8,9 @@ public operator(==) bool is_equal(string lhs, string rhs)
 {
     i64 len = #lhs;
     if (len != #rhs)
-        return 0;
+        return false;
     for (i64 i = 0; i < len; ++i)
         if (lhs[i] != rhs[i])
-            return 0;
-    return 1;
+            return false;
+    return true;
 }

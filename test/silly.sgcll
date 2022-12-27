@@ -1,0 +1,10 @@
+import "io";
+
+i32 main()
+{
+    i32 i = 3;
+    if (i == 2)
+        println("i is 3");
+    else for (i32 j = 0; j < i; ++j)
+        println(j -> i64);
+}

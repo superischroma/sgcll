@@ -2,10 +2,10 @@ import "io";
 
 i32 main()
 {
-    bool b = 0;
-    bool c = 1;
+    bool b = false;
+    bool c = true;
     if (b && c)
-        print("b && c");
+        println("b && c");
     if (b || c)
-        print("b || c");
+        println("b || c");
 }

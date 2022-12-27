@@ -9,5 +9,5 @@ i32 main()
         i = 9;
     else
         i = 10;
-    print(i -> i64);
+    println(i -> i64);
 }
