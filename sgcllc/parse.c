@@ -139,7 +139,7 @@ datatype_t* get_arith_type(token_t* token)
     {
         char c = token->content[i];
         if (c == 'u' || c == 'U') usign = true, certainly_integral = true;
-        if (c == 'b' || c == 'B') update(t_i8);
+        if (c == 'B') update(t_i8);
         if (c == 's' || c == 'S') update(t_i16);
         if (c == 'l' || c == 'L') update(t_i64);
         if (c == 'f' || c == 'F')
@@ -329,7 +329,17 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
                 char* label = make_label(p, token->content);
                 return ast_fliteral_init(dt, token->loc, atof(token->content), label);
             }
-            return ast_iliteral_init(dt, token->loc, atoll(token->content));
+            int tlen = strlen(token->content), radix = 10;
+            if (tlen >= 2 && token->content[0] == '0')
+            {
+                switch (token->content[1])
+                {
+                    case 'x': radix = 16; break;
+                    case 'b': radix = 2; break;
+                    case 'o': radix = 8; break;
+                }
+            }
+            return ast_iliteral_init(dt, token->loc, strtoll(radix == 10 ? token->content : token->content + 2, NULL, radix));
         }
         case TT_STRING_LITERAL:
         {

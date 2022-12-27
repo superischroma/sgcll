@@ -87,6 +87,16 @@ void lex_read_token(lexer_t* lex)
                 buffer_append(buffer, 'x');
                 lex_read(lex);
             }
+            if (lex_peek(lex) == 'b')
+            {
+                buffer_append(buffer, 'b');
+                lex_read(lex);
+            }
+            if (lex_peek(lex) == 'o')
+            {
+                buffer_append(buffer, 'o');
+                lex_read(lex);
+            }
             for (int signature = 0;;)
             {
                 int c = lex_peek(lex);
@@ -102,7 +112,6 @@ void lex_read_token(lexer_t* lex)
                         c == 'U' ||
                         c == 's' ||
                         c == 'S' ||
-                        c == 'b' ||
                         c == 'B')
                     {
                         signature++;

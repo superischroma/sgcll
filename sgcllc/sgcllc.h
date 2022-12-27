@@ -426,6 +426,7 @@ short impl_readi16(FILE* in);
 int impl_readi32(FILE* in);
 char* impl_readstr(FILE* in);
 bool fexists(char* path);
+int round_up(int num, int multiple);
 
 /* token.c */
 

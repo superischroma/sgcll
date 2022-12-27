@@ -306,7 +306,7 @@ static void emit_assign(emitter_t* e, ast_node_t* op)
 
 static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar)
 {
-    lvar->voffset = -(e->stackoffset += lvar->datatype->size);
+    lvar->voffset = -(e->stackoffset = round_up(e->stackoffset + lvar->datatype->size, lvar->datatype->size));
     if (lvar->vinit)
         emit_expr(e, lvar->vinit);
 }

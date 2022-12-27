@@ -172,3 +172,10 @@ bool fexists(char* path)
     fclose(exists);
     return true;
 }
+
+// i'm lazy: https://stackoverflow.com/questions/3407012/rounding-up-to-the-nearest-multiple-of-a-number
+int round_up(int num, int multiple)
+{
+    int remainder = num % multiple;
+    return multiple && remainder ? num + multiple - remainder : num;
+}

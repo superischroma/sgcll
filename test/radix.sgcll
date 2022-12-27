@@ -1,0 +1,9 @@
+import "io";
+
+i32 main()
+{
+    println(0x10L);
+    println(0b1111L);
+    println(0o12L);
+    println(012L);
+}
