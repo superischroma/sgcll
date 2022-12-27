@@ -1,0 +1,12 @@
+import "io";
+
+println(string str)
+{
+    io::println(5L);
+}
+
+i32 main()
+{
+    io::println("hi");
+    println("this doesn't matter because it's calling the local function");
+}

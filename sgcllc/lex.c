@@ -190,8 +190,17 @@ void lex_read_token(lexer_t* lex)
         case OP_SELECTION: // i'll have to change this eventually for varargs
         case OP_COMPLEMENT:
         case OP_TERNARY_Q:
+        {
+            vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
+            break;
+        }
         case OP_TERNARY_C:
         {
+            if (lex_peek(lex) == ':')
+            {
+                c = OP_SCOPE;
+                lex_read(lex);
+            }
             vector_push(lex->output, id_token_init(TT_KEYWORD, c, lex->offset, lex->row, lex->col));
             break;
         }

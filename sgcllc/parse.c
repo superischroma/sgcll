@@ -116,6 +116,8 @@ int precedence(int op)
         case OP_SELECTION:
         case OP_FUNC_CALL:
             return 2;
+        case OP_SCOPE:
+            return 1;
     }
     return 18;
 }
@@ -739,12 +741,9 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
 
 static ast_node_t* parser_read_import(parser_t* p)
 {
-    parser_get(p); // skip import keyword
-    bool namespaced = parser_check(p, KW_NAMESPACED);
-    if (namespaced)
-        parser_get(p);
+    parser_expect(p, KW_IMPORT); // skip import keyword
     token_t* path = parser_expect_type(p, TT_STRING_LITERAL);
-    ast_node_t* node = ast_import_init(path->loc, unwrap_string_literal(path->content), namespaced);
+    ast_node_t* node = ast_import_init(path->loc, unwrap_string_literal(path->content));
     parser_expect(p, ';');
     char* headerpath = NULL;
     for (int i = 0; i < options->import_search_paths->size; i++)
@@ -1186,7 +1185,7 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
             token_t* prev = parser_far_peek(p, -1);
             if (prev != NULL && prev->type == TT_IDENTIFIER && map_get(p->funcs, prev->content))
             {
-                if (vector_top(stack) != NULL && ((token_t*) vector_top(stack))->id == OP_SELECTION)
+                if (vector_top(stack) != NULL && (((token_t*) vector_top(stack))->id == OP_SELECTION || ((token_t*) vector_top(stack))->id == OP_SCOPE))
                     vector_push(expr_result, vector_pop(stack));
                 vector_push(stack, id_token_init(TT_KEYWORD, OP_FUNC_CALL, token->loc->offset, token->loc->row, token->loc->col));
             }
@@ -1352,6 +1351,11 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                                 goto next_token;
                             }
                         }
+                    }
+                    if (binop_chk(OP_SCOPE, 2))
+                    {
+                        vector_push(stack, ast_namespace_init(token->loc, token->content));
+                        continue;
                     }
                     #undef binop_chk
                     vector_push(stack, ast_get_by_token(p, token));
@@ -1531,6 +1535,15 @@ next_token:
                     parser_ensure_cextern(p, "__builtin_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                     break;
                 }
+                case OP_SCOPE:
+                {
+                    ast_node_t* identifier = vector_pop(stack);
+                    ast_node_t* ns = vector_pop(stack);
+                    if (!identifier || !ns)
+                        errorp(token->loc->row, token->loc->col, "expected 2 operands for scope operator");
+                    vector_push(stack, ast_binary_op_init(token->id, identifier->datatype, token->loc, ns, identifier));
+                    break;
+                }
                 case OP_TERNARY_Q:
                 {
                     ast_node_t* els = vector_pop(stack);
@@ -1544,19 +1557,21 @@ next_token:
                 case OP_FUNC_CALL:
                 {
                     ast_node_t* random_flavor = NULL;
-                    ast_node_t* obj = NULL;
+                    ast_node_t* modifier = NULL;
+                    ast_node_type ntype = -1;
                     for (int i = stack->size - 1; i >= 0; i--)
                     {
                         ast_node_t* node = vector_get(stack, i);
+                        ntype = node->type;
                         if (node->type == AST_FUNC_DEFINITION)
                         {
                             random_flavor = node;
                             break;
                         }
-                        if (node->type == OP_SELECTION && node->rhs->type == AST_FUNC_DEFINITION)
+                        if ((node->type == OP_SELECTION || node->type == OP_SCOPE) && node->rhs->type == AST_FUNC_DEFINITION)
                         {
                             random_flavor = node->rhs;
-                            obj = node->lhs;
+                            modifier = node->lhs;
                             break;
                         }
                     }
@@ -1569,6 +1584,10 @@ next_token:
                         for (int i = 0; i < flavors->size; i++)
                         {
                             ast_node_t* flavor = vector_get(flavors, i);
+                            if (ntype == OP_SCOPE && strcmp(modifier->ns_name, flavor->residing))
+                                continue;
+                            if (ntype != OP_SCOPE && strcmp(flavor->residing, p->lex->filename))
+                                continue;
                             bool thisless = flavor->func_type == 'g' || flavor->func_type == 'c';
                             int thisless_size = flavor->params->size - (thisless ? 0 : 1);
                             for (int j = thisless ? 0 : 1; j < flavor->params->size && vector_check_bounds(stack, stack->size - thisless_size + j); j++)
@@ -1596,8 +1615,6 @@ found_function:
                     args->size = found->params->size;
                     bool thisless = found->func_type == 'g' || found->func_type == 'c';
                     int thisless_offset = !thisless ? 1 : 0;
-                    // add(p, 5, 3)
-                    // add(5, 3)
                     for (int i = found->params->size - 1; i >= thisless_offset; i--)
                     {
                         ast_node_t* arg = vector_pop(stack), * param = vector_get(found->params, i);
@@ -1609,7 +1626,7 @@ found_function:
                             args->data[i] = ast_cast_init(param->datatype, arg->loc, arg);
                     }
                     if (!thisless)
-                        args->data[0] = obj;
+                        args->data[0] = modifier;
                     vector_pop(stack); // pop func name
                     vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, args));
                     break;
@@ -1652,7 +1669,6 @@ void parser_read(parser_t* p)
         vector_push(p->nfile->decls, node);
         return;
     }
-    ast_print(p->nfile);
     if (token_has_content(next))
         errorp(next->loc->row, next->loc->col, "encountered unknown token: %s", next->content);
     else

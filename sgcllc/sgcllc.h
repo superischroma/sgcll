@@ -295,11 +295,7 @@ typedef struct ast_node_t
             struct ast_node_t* for_then;
         };
         // AST_IMPORT
-        struct
-        {
-            char* path;
-            bool namespaced;
-        };
+        char* path;
         // AST_RETURN
         struct
         {
@@ -469,7 +465,7 @@ void map_delete(map_t* map);
 /* ast.c */
 
 ast_node_t* ast_file_init(location_t* loc);
-ast_node_t* ast_import_init(location_t* loc, char* path, bool namespaced);
+ast_node_t* ast_import_init(location_t* loc, char* path);
 ast_node_t* ast_func_definition_init(datatype_t* dt, location_t* loc, char func_type, char* func_name, char* residing);
 ast_node_t* ast_builtin_init(datatype_t* dt, char* func_name, vector_t* params, char* residing, char extrn);
 ast_node_t* ast_lvar_init(datatype_t* dt, location_t* loc, char* lvar_name, ast_node_t* vinit, char* residing);

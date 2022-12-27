@@ -23,11 +23,10 @@ ast_node_t* ast_file_init(location_t* loc)
     });
 }
 
-ast_node_t* ast_import_init(location_t* loc, char* path, bool namespaced)
+ast_node_t* ast_import_init(location_t* loc, char* path)
 {
     return ast_init(AST_IMPORT, NULL, loc, &(ast_node_t){
-        .path = path,
-        .namespaced = namespaced
+        .path = path
     });
 }
 

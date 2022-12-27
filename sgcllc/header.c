@@ -199,6 +199,7 @@ vector_t* read_header(FILE* in, char* filename)
                 int size = readi32;
                 short inst_var_count = readi16;
                 ast_node_t* bp = vector_push(decls, ast_blueprint_init(NULL, ident, NULL));
+                bp->residing = filename;
                 vector_t* inst_vars = vector_init(10, 5);
                 for (int i = 0; i < inst_var_count; i++)
                 {
