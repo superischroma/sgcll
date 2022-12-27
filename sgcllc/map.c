@@ -39,7 +39,7 @@ static void map_chk_rehash(map_t* map)
             continue;
         for (int i = hash(map->key[j]) % (map->capacity * 2);; i++)
         {
-            if (i >= map->capacity) i = 0;
+            if (i >= (map->capacity * 2)) i = 0;
             if (nkey[i] != NULL)
                 continue;
             nkey[i] = map->key[j];
@@ -80,7 +80,7 @@ void* map_get_local(map_t* map, char* k)
     for (int i = hash(k) % map->capacity; map->key[i] != NULL; i++)
     {
         if (i >= map->capacity) i = 0;
-        if (!strcmp(map->key[i], k))
+        if (map->key[i] && !strcmp(map->key[i], k))
             return map->value[i];
     }
     return NULL;
