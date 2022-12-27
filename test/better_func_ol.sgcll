@@ -1,0 +1,12 @@
+import "io";
+
+i32 main()
+{
+    // passing i32 to io::println function
+    // there is no io::println(i32) however, so it rates possible conversions
+    // io::println(string) - not evaluated (no type conversions available to i32)
+    // io::println(i64) - 1 (1 type conversion required to take i32 to i64)
+    // io::println(f64) - 2 (an itof/ftoi conversions count for 2)
+    // therefore, it picks io::println(i64)
+    io::println(5);
+}

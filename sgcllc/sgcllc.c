@@ -40,6 +40,7 @@ vector_t* build(char* path)
     lexer_t* lexer = lex_init(file, path);
     while (!lex_eof(lexer))
         lex_read_token(lexer);
+    #ifdef SGCLLC_DEBUG
     for (int i = 0; i < lexer->output->size; i++)
     {
         token_t* token = vector_get(lexer->output, i);
@@ -48,10 +49,13 @@ vector_t* build(char* path)
         else
             printf("%c (id: %i)\n", token->id, token->id);
     }
+    #endif
     parser_t* parser = parser_init(lexer);
     while (!parser_eof(parser))
         parser_read(parser);
+    #ifdef SGCLLC_DEBUG
     ast_print(parser->nfile);
+    #endif
     char* header = calloc(pathl + 2, sizeof(char));
     strcpy(header, path);
     header[pathl] = 'h';
@@ -99,7 +103,7 @@ int main(int argc, char** argv)
         sprintf(extralink, " %s", vector_get(links, i));
         strcat(link, extralink);
     }
-    printf("linker: %s", link);
+    debugf("linker command: %s\n", link);
     system(link);
     free(assembly);
     options_file = fopen("options", "wb");

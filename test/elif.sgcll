@@ -9,5 +9,5 @@ i32 main()
         i = 9;
     else
         i = 10;
-    println(i -> i64);
+    io::println(i -> i64);
 }

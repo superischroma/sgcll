@@ -8,5 +8,5 @@ f64 fmod(f64 x, f64 y)
 
 i32 main()
 {
-    println(fmod(5.3, 3.2));
+    io::println(fmod(5.3, 3.2));
 }

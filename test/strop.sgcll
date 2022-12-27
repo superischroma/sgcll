@@ -1,0 +1,9 @@
+import "io";
+
+i32 main()
+{
+    string str = "long string";
+    io::println(#str);
+    io::println(str[0] -> i64);
+    io::println('l' -> i64);
+}

@@ -40,6 +40,10 @@ typedef int token_type, ast_node_type, datatype_type, visibility_type, register_
 #define VT_PUBLIC 1
 #define VT_PROTECTED 2
 
+/* Debug Flag */
+
+#define SGCLLC_DEBUG
+
 /* vector_t Helpful Macros */
 
 #define DEFAULT_CAPACITY 10
@@ -445,12 +449,14 @@ bool vector_check_bounds(vector_t* vec, int index);
 void vector_delete(vector_t* vec);
 void vector_concat(vector_t* vec, vector_t* other);
 
-/* error.c */
+/* log.c */
 
 void errorl(lexer_t* lex, char* fmt, ...);
 void errorp(int row, int col, char* fmt, ...);
 void errore(int row, int col, char* fmt, ...);
 void errorc(char* fmt, ...);
+void infof(char* fmt, ...);
+void debugf(char* fmt, ...);
 
 /* map.c */
 
@@ -500,6 +506,7 @@ bool parser_eof(parser_t* p);
 void parser_read(parser_t* p);
 void parser_delete(parser_t* p);
 void set_up_builtins(void);
+void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vector_t* args);
 char* make_label(parser_t* p, void* content);
 char* make_func_label(char* filename, ast_node_t* func, ast_node_t* current_blueprint);
 datatype_t* arith_conv(datatype_t* t1, datatype_t* t2);

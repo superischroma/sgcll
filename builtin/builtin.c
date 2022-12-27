@@ -4,7 +4,9 @@
 
 #define __BUILTIN_DEBUG
 
-int __builtin_i64_dec_itos(long long n, char* buffer)
+gc_node_t* gc_root = NULL;
+
+int __builtin_i64_dec_itos(long long n, char* buffer, size_t radix)
 {
     int i, sign;
 
@@ -12,8 +14,15 @@ int __builtin_i64_dec_itos(long long n, char* buffer)
         n = -n;
     i = 0;
     do
-        buffer[i++] = __builtin_abs(n % 10) + '0';
-    while (n /= 10);
+    {
+        int a = __builtin_abs(n % radix);
+        if (a > 9)
+            a += '7';
+        else
+            a += '0';
+        buffer[i++] = a;
+    }
+    while (n /= radix);
     if (sign < 0)
         buffer[i++] = '-';
     buffer[i] = '\0';
@@ -29,7 +38,7 @@ int __builtin_i64_dec_itos(long long n, char* buffer)
 int __builtin_f64_dec_ftos(double d, char* buffer, int precision)
 {
     int ipart = (int) d;
-    int i = __builtin_i64_dec_itos(ipart, buffer);
+    int i = __builtin_i64_dec_itos(ipart, buffer, 10);
     buffer[i++] = '.';
     double dec = (d - ipart) * 10.0f;
     for (int j = 0; j < precision; i++, j++, dec = (dec * 10.0f) - ((int) dec) * 10)
@@ -45,10 +54,10 @@ int __builtin_string_length(char* str)
     return i;
 }
 
-void __builtin_i64_println(long long ll)
+void __builtin_i64_println(long long ll, size_t radix)
 {
     char buffer[34];
-    int c = __builtin_i64_dec_itos(ll, buffer);
+    int c = __builtin_i64_dec_itos(ll, buffer, radix);
     buffer[c] = '\n';
     buffer[c + 1] = '\0';
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
@@ -63,6 +72,11 @@ void __builtin_f64_println(double d)
     WriteFile(GetStdHandle((DWORD) -11), buffer, c + 1, 0, NULL);
 }
 
+void __builtin_string_print(char* str)
+{
+    WriteFile(GetStdHandle((DWORD) -11), str, __builtin_string_length(str), 0, NULL);
+}
+
 void __builtin_string_println(char* str)
 {
     WriteFile(GetStdHandle((DWORD) -11), str, __builtin_string_length(str), 0, NULL);
@@ -71,12 +85,22 @@ void __builtin_string_println(char* str)
 
 void* __builtin_alloc_bytes(size_t amount)
 {
-    return HeapAlloc(GetProcessHeap(), 0, amount);
+    void* mem = HeapAlloc(GetProcessHeap(), 0, amount);
+    gc_node_t* node = HeapAlloc(GetProcessHeap(), 0, sizeof(gc_node_t));
+    node->mem = mem;
+    node->next = gc_root;
+    gc_root = node;
+    return mem;
+}
+
+bool __builtin_delete_bytes_no_gc(void* mem)
+{
+    return HeapFree(GetProcessHeap(), 0, mem);
 }
 
 void* __builtin_dynamic_array(size_t length, size_t element_width)
 {
-    char* array = HeapAlloc(GetProcessHeap(), 0, length * element_width + 1);
+    char* array = __builtin_alloc_bytes(length * element_width + 1);
     array[0] = element_width;
     return array + 1;
 }
@@ -105,10 +129,12 @@ static void __builtin_delete_array_recur(void* array, size_t dc, unsigned long l
         for (int i = 0; i < *dimensions; i++)
             __builtin_delete_array_recur(((void**) array)[i], dc - 1, dimensions + 1);
     }
-    WINBOOL result = HeapFree(GetProcessHeap(), 0, (char*) array - 1);
+    bool result = __builtin_delete_bytes_no_gc((char*) array - 1);
     #ifdef __BUILTIN_DEBUG
     if (result)
         __builtin_string_println("[builtin debug] deallocated array");
+    else
+        __builtin_string_println("[builtin debug] failed to deallocate array");
     #endif
 }
 
@@ -123,6 +149,11 @@ size_t __builtin_array_size(void* array)
     return HeapSize(GetProcessHeap(), 0, array - 1) / *((char*) array - 1);
 }
 
+size_t __builtin_blueprint_size(void* obj)
+{
+    return HeapSize(GetProcessHeap(), 0, obj);
+}
+
 void __builtin_copy_memory(void* dest, const void* src, int length)
 {
     CopyMemory(dest, src, length);
@@ -130,9 +161,24 @@ void __builtin_copy_memory(void* dest, const void* src, int length)
 
 void __builtin_init()
 {
-    int i = 0;
-    __asm__("stmxcsr -4(%rbp)\n"
-	"   andl $0xF3FF, -4(%rbp)\n"
-	"   orl $0x6000, -4(%rbp)\n"
-	"   ldmxcsr -4(%rbp)\n");
+    _mm_setcsr((_mm_getcsr() & 0xF3FF) | 0x6000); // set rounding mode
+}
+
+void __builtin_gc_finalize()
+{
+    for (gc_node_t* node = gc_root; node;)
+    {
+        gc_node_t* next = node->next;
+        void* mem = node->mem;
+        bool result = __builtin_delete_bytes_no_gc(node->mem);
+        __builtin_delete_bytes_no_gc(node);
+        #ifdef __BUILTIN_DEBUG
+        if (result)
+            __builtin_string_print("[builtin debug] deallocated memory at 0x");
+        else
+            __builtin_string_print("[builtin debug] failed to deallocate memory at 0x");
+        __builtin_i64_println((UINT_PTR) mem, 16);
+        #endif
+        node = next;
+    }
 }

@@ -7,6 +7,8 @@
 
 #define NO_TERMINATOR -2
 
+#define isarithtype(type) (type != DTT_ARRAY && type != DTT_STRING && type != DTT_OBJECT)
+
 typedef struct 
 {
     int operator;
@@ -191,6 +193,17 @@ bool same_datatype(parser_t* p, datatype_t* t1, datatype_t* t2)
     return t1->type == t2->type;
 }
 
+bool convertible_datatype(parser_t* p, datatype_t* t1, datatype_t* t2)
+{
+    if (!t1 || !t2)
+        return false;
+    if (t1->type == DTT_OBJECT && t2->type == DTT_OBJECT)
+        return !strcmp(t1->name, t2->name);
+    if (isarithtype(t1->type) && isarithtype(t2->type))
+        return true;
+    return t1->type == t2->type;
+}
+
 datatype_t* clone_datatype(datatype_t* dt)
 {
     datatype_t* new = calloc(1, sizeof(datatype_t));
@@ -291,8 +304,6 @@ parser_t* parser_init(lexer_t* lex)
     p->links = vector_init(5, 5);
     p->funcs = map_init(NULL, 50);
     p->entry = "main";
-    vector_push(p->cexterns, ast_builtin_init(t_void, "__builtin_init",
-        vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA), NULL, 'b'));
     return p;
 }
 
@@ -302,7 +313,7 @@ void parser_make_header(parser_t* p, FILE* out)
 }
 
 // vector is deleted by function if already exists
-static void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vector_t* args)
+void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vector_t* args)
 {
     ast_node_t* extrn = map_get(p->lenv ? p->lenv : p->genv, name);
     if (extrn)
@@ -322,7 +333,7 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
             return ident;
         }
         case TT_CHAR_LITERAL:
-            return ast_iliteral_init(t_i8, token->loc, atoll(token->content));
+            return ast_iliteral_init(t_i8, token->loc, token->content[1]);
         case TT_NUMBER_LITERAL:
         {
             datatype_t* dt = get_arith_type(token);
@@ -800,7 +811,7 @@ static ast_node_t* parser_read_import(parser_t* p)
         }
         else if (symbol->type == AST_GVAR)
             name = symbol->var_name;
-        printf("included symbol from %s: %s\n", node->path, name);
+        debugf("included symbol from %s: %s\n", node->path, name);
         map_put(p->genv, name, vector_push(p->userexterns, symbol));
     }
     vector_delete(symbols);
@@ -1158,12 +1169,6 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
         token_t* token = parser_get(p);
         if (token == NULL)
             errorp(0, 0, "unexpected end of file");
-        /*
-        if (token_has_content(token))
-            printf("token: %s\n", token->content);
-        else
-            printf("token: %c\n", token->id);
-        */
         if (token->id == ';' && terminator == ';')
             break;
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
@@ -1282,6 +1287,7 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
     vector_clear(stack, RETAIN_OLD_CAPACITY);
     if (!expr_result->size)
         errorp(parser_peek(p)->loc->row, parser_peek(p)->loc->col, "null statement is not allowed");
+    #ifdef SGCLLC_DEBUG
     printf("----- results: (size %i)\n", expr_result->size);
     for (int i = 0; i < expr_result->size; i++)
     {
@@ -1294,6 +1300,7 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
             printf("result[%i] = %c (id: %i)\n", i, token->id, token->id);
     }
     printf("----- end results\n");
+    #endif
     #define operator_overload_body(chk, cargs) \
             { \
                 vector_t* keys = map_keys(p->genv); \
@@ -1315,11 +1322,12 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
                 break; \
             }
     #define check_binary_operator_overloads(lhs, rhs, chk, cargs) \
-        if (token->id != OP_ASSIGN && (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
+        if (token->id != OP_ASSIGN && (token->id != OP_SUBSCRIPT || lhs->datatype->type != DTT_STRING) && \
+            (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
             lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING)) \
             operator_overload_body(chk, cargs)
     #define check_unary_operator_overloads(operand, chk, cargs) \
-        if (operand->datatype->type == DTT_OBJECT || operand->datatype->type == DTT_STRING) \
+        if (token->id != OP_MAGNITUDE && (operand->datatype->type == DTT_OBJECT || operand->datatype->type == DTT_STRING)) \
             operator_overload_body(chk, cargs)
     for (int i = 0; i < expr_result->size; i++)
     {
@@ -1445,7 +1453,19 @@ next_token:
                     if (type == OP_SPACESHIP)
                         type = OP_SUB;
                     else if (type == OP_SUBSCRIPT)
-                        rettype = lhs->datatype->array_type;
+                    {
+                        switch (lhs->datatype->type)
+                        {
+                            case DTT_ARRAY:
+                                rettype = lhs->datatype->array_type;
+                                break;
+                            case DTT_STRING:
+                                rettype = t_i8;
+                                break;
+                            default:
+                                errorp(token->loc->row, token->loc->col, "subscript operator may not be applied to left hand side");
+                        }
+                    }
                     vector_push(stack, ast_binary_op_init(type, rettype, token->loc, lhs, rhs));
                     break;
                 }
@@ -1462,7 +1482,6 @@ next_token:
                 {
                     ast_node_t* type = vector_pop(stack);
                     ast_node_t* castval = vector_pop(stack);
-                    printf("found %i and %i\n", type->type, castval->type);
                     if (!type || !castval)
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for cast operator");
                     check_binary_operator_overloads(castval, type, 
@@ -1495,6 +1514,8 @@ next_token:
                     if (token->id == OP_MAGNITUDE)
                     {
                         parser_ensure_cextern(p, "__builtin_array_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        parser_ensure_cextern(p, "__builtin_string_length", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        parser_ensure_cextern(p, "__builtin_blueprint_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                         dt = t_i64;
                     }
                     else if (token->id == OP_NOT)
@@ -1581,6 +1602,7 @@ next_token:
                     ast_node_t* found = NULL;
                     if (random_flavor->extrn != 'b')
                     {
+                        unsigned int lowest_conv = -1;
                         for (int i = 0; i < flavors->size; i++)
                         {
                             ast_node_t* flavor = vector_get(flavors, i);
@@ -1590,14 +1612,25 @@ next_token:
                                 continue;
                             bool thisless = flavor->func_type == 'g' || flavor->func_type == 'c';
                             int thisless_size = flavor->params->size - (thisless ? 0 : 1);
+                            int conversions = 0;
                             for (int j = thisless ? 0 : 1; j < flavor->params->size && vector_check_bounds(stack, stack->size - thisless_size + j); j++)
                             {
                                 ast_node_t* param = vector_get(flavor->params, j);
-                                if (!same_datatype(p, param->datatype, ((ast_node_t*) vector_get(stack, stack->size - thisless_size + j))->datatype))
+                                ast_node_t* arg = vector_get(stack, stack->size - thisless_size + j);
+                                if (!convertible_datatype(p, param->datatype, arg->datatype))
                                     goto try_again;
+                                if (same_datatype(p, param->datatype, arg->datatype))
+                                    continue;
+                                conversions++;
+                                if ((isfloattype(param->datatype->type) && !isfloattype(arg->datatype->type)) ||
+                                    (!isfloattype(param->datatype->type) && isfloattype(arg->datatype->type)))
+                                    conversions++;
                             }
-                            found = flavor;
-                            break;
+                            if (conversions < lowest_conv)
+                            {
+                                lowest_conv = conversions;
+                                found = flavor;
+                            }
 try_again:
                         }
                     }
@@ -1608,7 +1641,7 @@ found_function:
                         errorp(token->loc->row, token->loc->col, "could not find a function by the name of '%s' that matched the specified args", random_flavor->func_name);
                     if (!strcmp(found->func_name, "_"))
                         errorp(token->loc->row, token->loc->col, "cannot call unnamed functions");
-                    printf("found: %s\n", found->func_label);
+                    debugf("found function flavor: %s\n", found->func_label);
                     if (found->residing != NULL && strcmp(p->lex->filename, found->residing) && found->datatype->visibility != VT_PUBLIC)
                         errorp(token->loc->row, token->loc->col, "can't call a function that's private to '%s'", found->residing);
                     vector_t* args = vector_init(found->params->size, 1);
@@ -1636,10 +1669,12 @@ found_function:
     }
     if (!stack->size)
     {
+        #ifdef SGCLLC_DEBUG
         printf("-- end of stack trace -\n");
         for (int i = 0; i < stack->size; i++)
             ast_print(vector_get(stack, i));
         printf("-^^^- stack trace -^^^-\n");
+        #endif
         errorp(0, 0, "dev error: you messed up with the stack goofball");
     }
     ast_node_t* top = (ast_node_t*) vector_top(stack);

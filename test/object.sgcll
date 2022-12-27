@@ -1,3 +1,5 @@
+import "io";
+
 blueprint point
 {
     public x;
@@ -19,9 +21,9 @@ blueprint point
 i32 main()
 {
     point p = point(5, 3);
-    println(p.x -> i64);
-    println(p.y -> i64);
+    io::println(p.x -> i64);
+    io::println(p.y -> i64);
     p.add(5);
-    println(p.x -> i64);
-    println(p.y -> i64);
+    io::println(p.x -> i64);
+    io::println(p.y -> i64);
 }

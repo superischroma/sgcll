@@ -1,8 +1,6 @@
 public operator(+) lowlvl string concat(string lhs, string rhs);
 public operator(+) lowlvl string concat(string lhs, i64 rhs);
 public operator(+) lowlvl string concat(i64 lhs, string rhs);
-public operator(#) lowlvl i64 length(string str);
-public operator([) lowlvl i8 char_at(string str, i64 index);
 
 public operator(==) bool is_equal(string lhs, string rhs)
 {

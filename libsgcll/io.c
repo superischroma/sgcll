@@ -7,7 +7,7 @@ void io_g_println_string(char* str)
 
 void io_g_println_i64(long long i)
 {
-    __builtin_i64_println(i);
+    __builtin_i64_println(i, 10);
 }
 
 void io_g_println_f64(double d)

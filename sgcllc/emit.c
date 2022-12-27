@@ -153,7 +153,7 @@ static void emit_file(emitter_t* e, ast_node_t* file)
     }
     ast_node_t* defaul_main = ast_func_definition_init(t_i32, NULL, 'g', e->p->entry, e->p->lex->filename);
     char* defaul_label = make_func_label(e->p->lex->filename, defaul_main, NULL);
-    printf("default label: %s\n", defaul_label);
+    debugf("entry label: %s\n", defaul_label);
     if (map_get(e->p->genv, defaul_label))
     {
         emit_noindent("main:");
@@ -161,13 +161,6 @@ static void emit_file(emitter_t* e, ast_node_t* file)
         emit(".global main");
     }
     free(defaul_label);
-    /*
-    for (int i = 0; i < file->imports->size; i++)
-    {
-        ast_node_t* node = (ast_node_t*) vector_get(file->imports, i);
-        errore(node->loc->row, node->loc->col, "import statements have not been implemented yet");
-    }
-    */
     for (int i = 0; i < file->decls->size; i++)
     {
         ast_node_t* node = (ast_node_t*) vector_get(file->decls, i);
@@ -227,7 +220,10 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
             emit("mov%c %%%s, %i(%%rbp)", int_reg_size(param->datatype->size), find_register(x64cc[i], param->datatype->size), 16 + (i * 8));
     }
     if (!strcmp(func_definition->func_name, "main"))
+    {
+        parser_ensure_cextern(e->p, "__builtin_init", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
         emit("call __builtin_init");
+    }
     if (func_definition->func_type == 'c')
     {
         emit("movl $%i, %%ecx", blueprint->bp_size);
@@ -239,6 +235,11 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
         emit_stmt(e, vector_get(func_definition->body->statements, i));
     if (func_definition->end_label)
         emit_noindent("%s:", func_definition->end_label);
+    if (!strcmp(func_definition->func_name, "main"))
+    {
+        parser_ensure_cextern(e->p, "__builtin_gc_finalize", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+        emit("call __builtin_gc_finalize");
+    }
     emit("addq $%i, %%rsp", stackalloc);
     e->stackoffset = 0;
     emit("popq %%rbp");
@@ -581,7 +582,8 @@ static void emit_subscript(emitter_t* e, ast_node_t* op, bool deref)
         }
     }
     char* regIndex = emitter_restore_int_reg(e, 8);
-    emit("imulq $%i, %%%s, %%%s", op->lhs->datatype->array_type->size, regIndex, regIndex);
+    if (op->lhs->datatype->type == DTT_ARRAY)
+        emit("imulq $%i, %%%s, %%%s", op->lhs->datatype->array_type->size, regIndex, regIndex);
     emit("addq %%%s, %%%s", regIndex, regA);
     if (deref)
     {
@@ -922,15 +924,21 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         }
         case OP_MAGNITUDE:
         {
+            emit_expr(e, expr->operand);
+            emit("mov %%rax, %%rcx");
             switch (expr->operand->datatype->type)
             {
                 case DTT_ARRAY:
-                {
-                    emit_expr(e, expr->operand);
-                    emit("mov %%rax, %%rcx");
                     emit("call __builtin_array_size");
                     break;
-                }
+                case DTT_STRING:
+                    emit("call __builtin_string_length");
+                    break;
+                case DTT_OBJECT:
+                    emit("call __builtin_blueprint_size");
+                    break;
+                default:
+                    errore(expr->loc->row, expr->loc->col, "magnitude operator cannot be applied to this expression");
             }
             break;
         }

@@ -22,9 +22,9 @@ public operator(+=) point _(point p, i32 delta)
 i32 main()
 {
     point p = point(5, 3);
-    println(p.x -> i64);
-    println(p.y -> i64);
+    io::println(p.x -> i64);
+    io::println(p.y -> i64);
     p += 5;
-    println(p.x -> i64);
-    println(p.y -> i64);
+    io::println(p.x -> i64);
+    io::println(p.y -> i64);
 }

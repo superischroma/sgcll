@@ -5,7 +5,7 @@ i32 main()
 {
     string str = "hello";
     if (str == "hi")
-        println("equal!");
+        io::println("equal!");
     else
-        println("not equal...");
+        io::println("not equal...");
 }
