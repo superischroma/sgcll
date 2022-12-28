@@ -691,6 +691,85 @@ static void emit_for_statement(emitter_t* e, ast_node_t* stmt)
     emit("jne %s", loop);
 }
 
+/*
+
+	cmpl	$2, -4(%rbp)
+	je	.L2
+	cmpl	$2, -4(%rbp)
+	jg	.L3
+	cmpl	$0, -4(%rbp)
+	je	.L4
+	cmpl	$1, -4(%rbp)
+	je	.L5
+	jmp	.L3
+.L2:
+	movl	$8, -4(%rbp)
+	addl	$2, -4(%rbp)
+	movl	$2, %eax
+	jmp	.L6
+.L5:
+	movl	$3, %eax
+	jmp	.L6
+.L4:
+	movl	$6, %eax
+	jmp	.L6
+.L3:
+	movl	$7, %eax
+.L6:
+*/
+
+static void emit_switch_statement(emitter_t* e, ast_node_t* stmt)
+{
+    ast_node_t* cmp = stmt->cmp;
+    int default_case_index = -1;
+    for (int i = 0; i < stmt->cases->size; i++)
+    {
+        ast_node_t* case_stmt = vector_get(stmt->cases, i);
+        if (!case_stmt->case_conditions->size)
+        {
+            default_case_index = i;
+            continue;
+        }
+        for (int j = 0; j < case_stmt->case_conditions->size; j++)
+        {
+            ast_node_t* case_cond = vector_get(case_stmt->case_conditions, j);
+            datatype_t* agreed_type = arith_conv(cmp->datatype, case_cond->datatype);
+            bool ftype = isfloattype(agreed_type->type);
+            char* regA = find_register(REG_A, agreed_type->size);
+            emit_expr(e, cmp);
+            emit_conv(e, cmp->datatype, agreed_type);
+            if (!ftype)
+                emitter_stash_int_reg(e, regA); // rhs stashed
+            else
+                emitter_stash_float_reg(e, "xmm0", agreed_type->size);
+            emit_expr(e, case_cond);
+            emit_conv(e, case_cond->datatype, agreed_type);
+            if (!ftype)
+                emit("cmp%c %%%s, %%%s", int_reg_size(agreed_type->size), emitter_restore_int_reg(e, agreed_type->size), regA);
+            else
+                emit("comis%c %%%s, %%xmm0", floatsize(agreed_type->size), emitter_restore_float_reg(e, agreed_type->size));
+            emit("je %s", case_stmt->case_label);
+        }
+    }
+    char* end_label = make_label(e->p, NULL);
+    if (default_case_index != -1)
+    {
+        ast_node_t* case_stmt = vector_get(stmt->cases, default_case_index);
+        emit("jmp %s", case_stmt->case_label);
+    }
+    else
+        emit("jmp %s", end_label);
+    for (int i = 0; i < stmt->cases->size; i++)
+    {
+        ast_node_t* case_stmt = vector_get(stmt->cases, i);
+        emit_noindent("%s:", case_stmt->case_label);
+        for (int j = 0; j < case_stmt->case_then->statements->size; j++)
+            emit_stmt(e, vector_get(case_stmt->case_then->statements, j));
+        emit("jmp %s", end_label);
+    }
+    emit_noindent("%s:", end_label);
+}
+
 static void emit_delete_statement(emitter_t* e, ast_node_t* stmt)
 {
     switch (stmt->delsym->type)
@@ -981,6 +1060,11 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt)
         case AST_DELETE:
         {
             emit_delete_statement(e, stmt);
+            break;
+        }
+        case AST_SWITCH:
+        {
+            emit_switch_statement(e, stmt);
             break;
         }
         default:

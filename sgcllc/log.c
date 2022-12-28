@@ -79,13 +79,21 @@ void errorc(char* fmt, ...)
     exit(EXIT_FAILURE);
 }
 
-void infof(char* fmt, ...)
+void warnf(int row, int col, char* fmt, ...)
 {
     printf("sgcllc: ");
     chgcolor(stdout, YELLOW, BLACK, DIM);
-    printf("info");
+    printf("warning ");
     resetcolor(stdout);
-    printf(": ");
+    fprintf(stdout, "{");
+    chgcolor(stdout, CYAN, BLACK, DIM);
+    fprintf(stdout, "%i", row);
+    chgcolor(stdout, WHITE, BLACK, DIM);
+    fprintf(stdout, "|");
+    chgcolor(stdout, CYAN, BLACK, DIM);
+    fprintf(stdout, "%i", col);
+    resetcolor(stdout);
+    printf("}: ");
     va_list args;
     va_start(args, fmt);
     vprintf(fmt, args);

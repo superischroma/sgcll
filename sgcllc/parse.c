@@ -650,6 +650,70 @@ static ast_node_t* parser_read_for_statement(parser_t* p)
     return for_stmt;
 }
 
+static ast_node_t* parser_read_stub_statement(parser_t* p, int kw, ast_node_type type)
+{
+    token_t* kwtok = parser_expect(p, kw);
+    parser_expect(p, ';');
+    return ast_stub_init(type, NULL, kwtok->loc);
+}
+
+static ast_node_t* parser_read_switch_statement(parser_t* p)
+{
+    token_t* switch_kw = parser_expect(p, KW_SWITCH);
+    parser_expect(p, '(');
+    ast_node_t* cmp = parser_read_expr(p, ')');
+    parser_expect(p, ')');
+    ast_node_t* switch_stmt = ast_switch_init(switch_kw->loc, cmp);
+    parser_expect(p, '{');
+    bool last_stmt_case = false;
+    ast_node_t* current_case = NULL;
+    for (;;)
+    {
+        token_t* token = parser_peek(p);
+        if (token == NULL)
+            errorp(0, 0, "unexpected end of file");
+        if (parser_check(p, '}'))
+        {
+            parser_get(p);
+            break;
+        }
+        if (parser_check(p, KW_CASE) || parser_check(p, KW_DEFAULT))
+        {
+            int id = token->id;
+            if (!last_stmt_case)
+            {
+                last_stmt_case = true;
+                if (current_case)
+                    vector_push(switch_stmt->cases, current_case);
+                current_case = ast_case_init(token->loc);
+                current_case->case_label = make_label(p, NULL);
+            }
+            parser_get(p);
+            if (id == KW_CASE)
+                vector_push(current_case->case_conditions, ast_get_by_token(p, parser_get(p)));
+            parser_expect(p, ':');
+        }
+        else if (parser_check(p, '{'))
+        {
+            if (!current_case)
+                errorp(token->loc->row, token->loc->col, "statement in switch body before case label");
+            parser_get(p);
+            parser_read_body(p, current_case->case_then);
+            last_stmt_case = false;
+        }
+        else
+        {
+            if (!current_case)
+                errorp(token->loc->row, token->loc->col, "statement in switch body before case label");
+            vector_push(current_case->case_then->statements, parser_read_stmt(p));
+            last_stmt_case = false;
+        }
+    }
+    if (current_case)
+        vector_push(switch_stmt->cases, current_case);
+    return switch_stmt;
+}
+
 static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_dtt, int terminator, header_plus_t* additional)
 {
     if (additional)
@@ -1158,6 +1222,12 @@ static ast_node_t* parser_read_stmt(parser_t* p)
         return parser_read_while_statement(p);
     if (parser_is_header_statement(p, KW_FOR))
         return parser_read_for_statement(p);
+    if (parser_is_header_statement(p, KW_SWITCH))
+        return parser_read_switch_statement(p);
+    if (parser_is_header_statement(p, KW_BREAK))
+        return parser_read_stub_statement(p, KW_BREAK, AST_BREAK);
+    if (parser_is_header_statement(p, KW_CONTINUE))
+        return parser_read_stub_statement(p, KW_CONTINUE, AST_CONTINUE);
     return parser_read_expr(p, ';');
 }
 
@@ -1351,7 +1421,7 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
         if (token->type == TT_CHAR_LITERAL || token->type == TT_STRING_LITERAL || token->type == TT_NUMBER_LITERAL)
             vector_push(stack, ast_get_by_token(p, token));
         if (token->type == TT_DATATYPE)
-            vector_push(stack, ast_stub_init(token->dt, token->loc));
+            vector_push(stack, ast_stub_init(AST_STUB, token->dt, token->loc));
         if (token->type == TT_IDENTIFIER)
         {
             ast_node_t* found = NULL;

@@ -1,0 +1,17 @@
+import "io";
+
+i32 main()
+{
+    i32 i = 8;
+    switch (i)
+    {
+        case 5:
+            i = 6;
+        case 6:
+        case 7:
+            i = 9;
+        default:
+            i = 10;
+    }
+    io::println(i);
+}

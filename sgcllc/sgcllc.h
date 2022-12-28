@@ -133,6 +133,10 @@ enum {
     AST_BLUEPRINT,
     AST_NAMESPACE,
     AST_TERNARY,
+    AST_SWITCH,
+    AST_CASE,
+    AST_BREAK,
+    AST_CONTINUE,
     #define keyword(id, name, _) id,
     #include "keywords.inc"
     #undef keyword 
@@ -330,6 +334,19 @@ typedef struct ast_node_t
             struct ast_node_t* tern_then;
             struct ast_node_t* tern_els;
         };
+        // AST_SWITCH
+        struct
+        {
+            struct ast_node_t* cmp;
+            vector_t* cases;
+        };
+        // AST_CASE
+        struct
+        {
+            vector_t* case_conditions; // null if default
+            struct ast_node_t* case_then;
+            char* case_label;
+        };
     };
 } ast_node_t;
 
@@ -455,7 +472,7 @@ void errorl(lexer_t* lex, char* fmt, ...);
 void errorp(int row, int col, char* fmt, ...);
 void errore(int row, int col, char* fmt, ...);
 void errorc(char* fmt, ...);
-void infof(char* fmt, ...);
+void warnf(int row, int col, char* fmt, ...);
 void debugf(char* fmt, ...);
 
 /* map.c */
@@ -486,12 +503,14 @@ ast_node_t* ast_if_init(datatype_t* dt, location_t* loc, ast_node_t* if_cond);
 ast_node_t* ast_while_init(datatype_t* dt, location_t* loc, ast_node_t* while_cond);
 ast_node_t* ast_for_init(datatype_t* dt, location_t* loc, ast_node_t* for_init, ast_node_t* for_cond, ast_node_t* for_post);
 ast_node_t* ast_delete_init(datatype_t* dt, location_t* loc, ast_node_t* delsym);
-ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc);
+ast_node_t* ast_stub_init(ast_node_type type, datatype_t* dt, location_t* loc);
 ast_node_t* ast_make_init(datatype_t* dt, location_t* loc);
 ast_node_t* ast_unary_op_init(ast_node_type type, datatype_t* dt, location_t* loc, ast_node_t* operand);
 ast_node_t* ast_blueprint_init(location_t* loc, char* bp_name, datatype_t* dt);
 ast_node_t* ast_namespace_init(location_t* loc, char* ns_name);
 ast_node_t* ast_ternary_init(datatype_t* dt, location_t* loc, ast_node_t* cond, ast_node_t* then, ast_node_t* els);
+ast_node_t* ast_switch_init(location_t* loc, ast_node_t* cmp);
+ast_node_t* ast_case_init(location_t* loc);
 void ast_print(ast_node_t* node);
 void print_datatype(datatype_t* dt);
 

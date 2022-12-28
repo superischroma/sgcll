@@ -170,9 +170,9 @@ ast_node_t* ast_cast_init(datatype_t* dt, location_t* loc, ast_node_t* castval)
     });
 }
 
-ast_node_t* ast_stub_init(datatype_t* dt, location_t* loc)
+ast_node_t* ast_stub_init(ast_node_type type, datatype_t* dt, location_t* loc)
 {
-    return ast_init(AST_STUB, dt, loc, &(ast_node_t){});
+    return ast_init(type, dt, loc, &(ast_node_t){});
 }
 
 ast_node_t* ast_make_init(datatype_t* dt, location_t* loc)
@@ -203,6 +203,22 @@ ast_node_t* ast_ternary_init(datatype_t* dt, location_t* loc, ast_node_t* cond, 
         .tern_cond = cond,
         .tern_then = then,
         .tern_els = els
+    });
+}
+
+ast_node_t* ast_switch_init(location_t* loc, ast_node_t* cmp)
+{
+    return ast_init(AST_SWITCH, cmp->datatype, loc, &(ast_node_t){
+        .cmp = cmp,
+        .cases = vector_init(10, 5)
+    });
+}
+
+ast_node_t* ast_case_init(location_t* loc)
+{
+    return ast_init(AST_CASE, NULL, loc, &(ast_node_t){
+        .case_conditions = vector_init(3, 5),
+        .case_then = ast_block_init(loc)
     });
 }
 

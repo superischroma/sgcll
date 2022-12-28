@@ -2,5 +2,5 @@ import "io";
 
 i32 main()
 {
-    println("Hello world!");
+    io::println("Hello world!");
 }
