@@ -1279,6 +1279,50 @@ static void parser_rpn(parser_t* p, vector_t* stack, vector_t* expr_result, int 
     vector_delete(calls);
 }
 
+static ast_node_t* parser_find_operator_overload(parser_t* p, vector_t* args, datatype_t* rettype, token_t* op)
+{
+    vector_t* keys = map_keys(p->genv);
+    ast_node_t* found = NULL;
+    unsigned int lowest_conv = -1;
+    for (int i = 0; i < keys->size; i++)
+    {
+        ast_node_t* node = map_get(p->genv, vector_get(keys, i));
+        if (!node)
+            continue;
+        if (node->type != AST_FUNC_DEFINITION)
+            continue;
+        if (node->params->size != args->size)
+            continue;
+        if (rettype && !same_datatype(p, node->datatype, rettype))
+            continue;
+        int conversions = 0;
+        debugf("comparing against: %s\n", node->func_label);
+        for (int j = 0; j < args->size; j++)
+        {
+            ast_node_t* param = vector_get(node->params, j);
+            ast_node_t* arg = vector_get(args, j);
+            debugf("    comparing arg: %i, to %i\n", arg->datatype->type, param->datatype->type);
+            if (!convertible_datatype(p, param->datatype, arg->datatype))
+                goto try_again_overload;
+            if (same_datatype(p, param->datatype, arg->datatype))
+                continue;
+            conversions++;
+            if ((isfloattype(param->datatype->type) && !isfloattype(arg->datatype->type)) ||
+                (!isfloattype(param->datatype->type) && isfloattype(arg->datatype->type)))
+                conversions++;
+        }
+        if (conversions < lowest_conv)
+        {
+            lowest_conv = conversions;
+            found = node;
+        }
+try_again_overload:
+    }
+    if (found)
+        debugf("found operator overload: %s\n", found->func_label);
+    return found ? ast_func_call_init(found->datatype, op->loc, found, args) : NULL;
+}
+
 static ast_node_t* parser_read_expr(parser_t* p, int terminator)
 {
     vector_t* stack = vector_init(20, 10);
@@ -1301,34 +1345,6 @@ static ast_node_t* parser_read_expr(parser_t* p, int terminator)
     }
     printf("----- end results\n");
     #endif
-    #define operator_overload_body(chk, cargs) \
-            { \
-                vector_t* keys = map_keys(p->genv); \
-                ast_node_t* found = NULL; \
-                for (int i = 0; i < keys->size; i++) \
-                { \
-                    ast_node_t* node = map_get(p->genv, vector_get(keys, i)); \
-                    if (!node) \
-                        continue; \
-                    if (node->type != AST_FUNC_DEFINITION) \
-                        continue; \
-                    datatype_t* rettype = node->datatype; \
-                    chk \
-                } \
-                vector_delete(keys); \
-                if (!found) \
-                    errorp(token->loc->row, token->loc->col, "no operator overload for %i with the specified arguments", token->id); \
-                vector_push(stack, ast_func_call_init(found->datatype, token->loc, found, cargs)); \
-                break; \
-            }
-    #define check_binary_operator_overloads(lhs, rhs, chk, cargs) \
-        if (token->id != OP_ASSIGN && (token->id != OP_SUBSCRIPT || lhs->datatype->type != DTT_STRING) && \
-            (lhs->datatype->type == DTT_OBJECT || rhs->datatype->type == DTT_OBJECT || \
-            lhs->datatype->type == DTT_STRING || rhs->datatype->type == DTT_STRING)) \
-            operator_overload_body(chk, cargs)
-    #define check_unary_operator_overloads(operand, chk, cargs) \
-        if (token->id != OP_MAGNITUDE && (operand->datatype->type == DTT_OBJECT || operand->datatype->type == DTT_STRING)) \
-            operator_overload_body(chk, cargs)
     for (int i = 0; i < expr_result->size; i++)
     {
         token_t* token = (token_t*) vector_get(expr_result, i);
@@ -1427,18 +1443,12 @@ next_token:
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for operator %i", token->id);
                     if (lhs->datatype->type == DTT_LET) lhs->datatype = rhs->datatype;
                     if (rhs->type == AST_MAKE) lhs->datatype = rhs->datatype;
-                    check_binary_operator_overloads(lhs, rhs,
-                        if (node->params->size != 2)
-                            continue;
-                        ast_node_t* func_lhs = vector_get(node->params, 0);
-                        ast_node_t* func_rhs = vector_get(node->params, 1);
-                        if (node->operator == token->id && same_datatype(p, lhs->datatype, func_lhs->datatype) &&
-                            same_datatype(p, rhs->datatype, func_rhs->datatype))
-                        {
-                            found = node; 
-                            break;
-                        }
-                    , vector_qinit(2, lhs, rhs));
+                    ast_node_t* overload = parser_find_operator_overload(p, vector_qinit(2, lhs, rhs), NULL, token);
+                    if (overload)
+                    {
+                        vector_push(stack, overload);
+                        break;
+                    }
                     datatype_t* rettype = arith_conv(lhs->datatype, rhs->datatype);
                     if (token->id == OP_EQUAL ||
                         token->id == OP_NOT_EQUAL ||
@@ -1484,17 +1494,12 @@ next_token:
                     ast_node_t* castval = vector_pop(stack);
                     if (!type || !castval)
                         errorp(token->loc->row, token->loc->col, "expected 2 operands for cast operator");
-                    check_binary_operator_overloads(castval, type, 
-                        if (node->params->size != 1)
-                            continue;
-                        ast_node_t* func_lhs = vector_get(node->params, 0);
-                        if (node->operator == token->id && same_datatype(p, castval->datatype, func_lhs->datatype) &&
-                            same_datatype(p, type->datatype, rettype))
-                        {
-                            found = node;
-                            break;
-                        }
-                    , vector_qinit(1, castval));
+                    ast_node_t* overload = parser_find_operator_overload(p, vector_qinit(1, castval), type->datatype, token);
+                    if (overload)
+                    {
+                        vector_push(stack, overload);
+                        break;
+                    }
                     vector_push(stack, ast_cast_init(type->datatype, token->loc, castval));
                     break;
                 }
@@ -1520,16 +1525,12 @@ next_token:
                     }
                     else if (token->id == OP_NOT)
                         dt = t_bool;
-                    check_unary_operator_overloads(operand, 
-                        if (node->params->size != 1)
-                            continue;
-                        ast_node_t* func_lhs = vector_get(node->params, 0);
-                        if (node->operator == token->id && same_datatype(p, operand->datatype, func_lhs->datatype))
-                        {
-                            found = node;
-                            break;
-                        }
-                    , vector_qinit(1, operand));
+                    ast_node_t* overload = parser_find_operator_overload(p, vector_qinit(1, operand), NULL, token);
+                    if (overload)
+                    {
+                        vector_push(stack, overload);
+                        break;
+                    }
                     vector_push(stack, ast_unary_op_init(token->id, dt, token->loc, operand));
                     break;
                 }

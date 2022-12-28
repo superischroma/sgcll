@@ -14,7 +14,7 @@ blueprint point
 
     public string to_string()
     {
-        return "point{x=" + (this.x -> i64) + ", y=" + (this.y -> i64) + "}";
+        return "point{x=" + this.x + ", y=" + this.y + "}";
     }
 }
 
