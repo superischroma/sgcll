@@ -13,6 +13,7 @@ typedef struct
 {
     int operator;
     bool lowlvl;
+    int unsafe; // -2 for no unsafe, -1 for unsafe no specified stack allocation
 } header_plus_t;
     
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token);
@@ -321,6 +322,25 @@ void parser_ensure_cextern(parser_t* p, char* name, datatype_t* dt, vector_t* ar
     map_put(p->genv, name, vector_push(p->cexterns, ast_builtin_init(dt, name, args, NULL, 'b')));
 }
 
+static long long read_iliteral(char* str, location_t* loc)
+{
+    int tlen = strlen(str), radix = 10;
+    if (tlen >= 2 && str[0] == '0')
+    {
+        switch (str[1])
+        {
+            case 'x': radix = 16; break;
+            case 'b': radix = 2; break;
+            case 'o': radix = 8; break;
+            case 'a':
+            case 'c' ... 'n':
+            case 'p' ... 'w':
+                errorp(loc->row, loc->col, "unexpected radix prefix for integer literal");
+        }
+    }
+    return strtoll(radix == 10 ? str : str + 2, NULL, radix);
+}
+
 static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
 {
     switch (token->type)
@@ -342,17 +362,7 @@ static ast_node_t* ast_get_by_token(parser_t* p, token_t* token)
                 char* label = make_label(p, token->content);
                 return ast_fliteral_init(dt, token->loc, atof(token->content), label);
             }
-            int tlen = strlen(token->content), radix = 10;
-            if (tlen >= 2 && token->content[0] == '0')
-            {
-                switch (token->content[1])
-                {
-                    case 'x': radix = 16; break;
-                    case 'b': radix = 2; break;
-                    case 'o': radix = 8; break;
-                }
-            }
-            return ast_iliteral_init(dt, token->loc, strtoll(radix == 10 ? token->content : token->content + 2, NULL, radix));
+            return ast_iliteral_init(dt, token->loc, read_iliteral(token->content, token->loc));
         }
         case TT_STRING_LITERAL:
         {
@@ -522,10 +532,8 @@ static bool parser_is_func_definition(parser_t* p)
         token_t* prev = parser_far_peek(p, i - 1);
         if (token == NULL)
             return false;
-        if (token->type == TT_KEYWORD && token->id == KW_LPAREN && (!prev || prev->type != TT_KEYWORD))
+        if (prev && token->type == TT_KEYWORD && token->id == '(' && prev->type == TT_IDENTIFIER)
             break;
-        if (token->type != TT_IDENTIFIER && token->type != TT_KEYWORD)
-            return false;
     }
     for (i++;; i++)
     {
@@ -720,6 +728,7 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
     {
         additional->operator = -1;
         additional->lowlvl = false;
+        additional->unsafe = -2;
     }
     datatype_t* dt = calloc(1, sizeof(datatype_t));
     dt->visibility = VT_PRIVATE;
@@ -797,6 +806,24 @@ static datatype_t* parser_build_datatype(parser_t* p, datatype_type unspecified_
             case KW_LOWLVL:
                 additional->lowlvl = true;
                 break;
+            case KW_UNSAFE:
+            {
+                parser_get(p);
+                if (parser_check(p, '('))
+                {
+                    parser_get(p);
+                    token_t* ilit = parser_expect_type(p, TT_NUMBER_LITERAL);
+                    parser_expect(p, ')');
+                    parser_unget(p);
+                    additional->unsafe = read_iliteral(ilit->content, ilit->loc);
+                }
+                else
+                {
+                    parser_unget(p);
+                    additional->unsafe = -1;
+                }
+                break;
+            }
             case KW_LBRACK:
             {
                 parser_get(p);
@@ -889,6 +916,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
     token_t* func_name_token = parser_expect_type(p, TT_IDENTIFIER);
     ast_node_t* func_node = ast_func_definition_init(dt, func_name_token->loc, 'g', func_name_token->content, p->lex->filename);
     func_node->operator = hp->operator;
+    func_node->unsafe = hp->unsafe;
     func_node->lowlvl_label = NULL;
     if (!strcmp(func_name_token->content, "constructor"))
     {
@@ -1361,6 +1389,8 @@ static ast_node_t* parser_find_operator_overload(parser_t* p, vector_t* args, da
             continue;
         if (node->type != AST_FUNC_DEFINITION)
             continue;
+        if (node->operator != op->id)
+            continue;
         if (node->params->size != args->size)
             continue;
         if (rettype && !same_datatype(p, node->datatype, rettype))
@@ -1581,6 +1611,7 @@ next_token:
                 case OP_PREFIX_DECREMENT:
                 case OP_POSTFIX_INCREMENT:
                 case OP_POSTFIX_DECREMENT:
+                case OP_ASM:
                 {
                     ast_node_t* operand = vector_pop(stack);
                     if (!operand)
@@ -1595,8 +1626,16 @@ next_token:
                     }
                     else if (token->id == OP_NOT)
                         dt = t_bool;
+                    else if (token->id == OP_ASM)
+                    {
+                        if (p->current_func->unsafe == -2)
+                            errorp(token->loc->row, token->loc->col, "asm operator may not be used inside a safe function");
+                        if (dt->type != DTT_STRING)
+                            errorp(token->loc->row, token->loc->col, "asm operator expected string literal");
+                        dt = t_void;
+                    }
                     ast_node_t* overload = parser_find_operator_overload(p, vector_qinit(1, operand), NULL, token);
-                    if (overload)
+                    if (token->id != OP_ASM && overload)
                     {
                         vector_push(stack, overload);
                         break;

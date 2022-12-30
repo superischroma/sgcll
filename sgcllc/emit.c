@@ -210,7 +210,7 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
     emit("pushq %%rbp");
     emit("movq %%rsp, %%rbp");
     int stackalloc = find_stackalloc(func_definition->local_variables);
-    emit("subq $%i, %%rsp", stackalloc);
+    emit("subq $%i, %%rsp", func_definition->unsafe < 0 ? stackalloc : func_definition->unsafe);
     for (int i = 0; i < min(func_definition->params->size, 4); i++)
     {
         ast_node_t* param = (ast_node_t*) vector_get(func_definition->params, i);
@@ -240,7 +240,7 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
         parser_ensure_cextern(e->p, "__builtin_gc_finalize", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
         emit("call __builtin_gc_finalize");
     }
-    emit("addq $%i, %%rsp", stackalloc);
+    emit("addq $%i, %%rsp", func_definition->unsafe < 0 ? stackalloc : func_definition->unsafe);
     e->stackoffset = 0;
     emit("popq %%rbp");
     emit("ret");
@@ -691,33 +691,6 @@ static void emit_for_statement(emitter_t* e, ast_node_t* stmt)
     emit("jne %s", loop);
 }
 
-/*
-
-	cmpl	$2, -4(%rbp)
-	je	.L2
-	cmpl	$2, -4(%rbp)
-	jg	.L3
-	cmpl	$0, -4(%rbp)
-	je	.L4
-	cmpl	$1, -4(%rbp)
-	je	.L5
-	jmp	.L3
-.L2:
-	movl	$8, -4(%rbp)
-	addl	$2, -4(%rbp)
-	movl	$2, %eax
-	jmp	.L6
-.L5:
-	movl	$3, %eax
-	jmp	.L6
-.L4:
-	movl	$6, %eax
-	jmp	.L6
-.L3:
-	movl	$7, %eax
-.L6:
-*/
-
 static void emit_switch_statement(emitter_t* e, ast_node_t* stmt)
 {
     ast_node_t* cmp = stmt->cmp;
@@ -900,6 +873,11 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
         case OP_COMPLEMENT:
         {
             emit_single_unary(e, expr);
+            break;
+        }
+        case OP_ASM:
+        {
+            emit("%s /* inline assembly (line %i, row %i) */", unwrap_string_literal(expr->operand->svalue), expr->loc->row, expr->loc->col);
             break;
         }
         case OP_PREFIX_INCREMENT:

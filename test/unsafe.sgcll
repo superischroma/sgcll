@@ -1,0 +1,8 @@
+import "io";
+
+unsafe(48) i32 main() // unsafe function, argument for specifier determines bytes on stack
+{
+    i32 i = 0;
+    asm "movl $5, -4(%rbp)"; // assign 5 to i
+    io::println(i);
+}

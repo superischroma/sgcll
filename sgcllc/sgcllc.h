@@ -268,6 +268,7 @@ typedef struct ast_node_t
             struct ast_node_t* body;
             int operator;
             char* end_label;
+            int unsafe;
         };
         // AST_FUNC_CALL
         struct
