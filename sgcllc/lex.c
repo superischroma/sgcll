@@ -291,7 +291,7 @@ void lex_read_token(lexer_t* lex)
             if (vector_top(lex->output) != NULL)
             {
                 token_t* top = vector_top(lex->output);
-                if (top->type == TT_KEYWORD)
+                if (top->type == TT_KEYWORD && top->id != ')')
                     c = OP_MINUS;
                 if (lex_peek(lex) == OP_SUB)
                 {

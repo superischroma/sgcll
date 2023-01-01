@@ -394,6 +394,7 @@ typedef struct emitter_t
     int itmp;
     int ftmp;
     bool control;
+    char* fp_negate_label;
 } emitter_t;
 
 typedef struct options_t

@@ -26,6 +26,18 @@ static void emit_stmt(emitter_t* e, ast_node_t* stmt);
 static void emit_expr(emitter_t* e, ast_node_t* expr);
 static void emit_lvar_decl(emitter_t* e, ast_node_t* lvar);
 
+// operands should be evaluated in-order
+int operand_priority(ast_node_t* op)
+{
+    switch (op->type)
+    {
+        case AST_FUNC_CALL:
+            return 1;
+        default:
+            return 2;
+    }
+}
+
 int find_stackalloc(vector_t* lvars)
 {
     int stackalloc = 32;
@@ -94,7 +106,7 @@ emitter_t* emitter_init(parser_t* p, FILE* out, bool control)
     e->p = p;
     e->out = out;
     e->itmp = 0;
-    e->ftmp = 1;
+    e->ftmp = 4;
     e->stackmax = 0;
     e->control = control;
     return e;
@@ -352,6 +364,18 @@ static void emit_make(emitter_t* e, ast_node_t* make)
     emit("call __builtin_dynamic_ndim_array");
 }
 
+static void emit_binary_op(emitter_t* e, ast_node_t* lhs, ast_node_t* rhs, datatype_t* agreed_type)
+{
+    emit_expr(e, rhs);
+    emit_conv(e, rhs->datatype, agreed_type);
+    if (isfloattype(agreed_type->type))
+        emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), agreed_type->size);
+    else
+        emitter_stash_int_reg(e, find_register(REG_A, agreed_type->size));
+    emit_expr(e, lhs);
+    emit_conv(e, lhs->datatype, agreed_type);
+}
+
 static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
@@ -366,11 +390,7 @@ static void emit_int_add_sub(emitter_t* e, ast_node_t* op)
         default:
             errore(op->loc->row, op->loc->col, "unknown operation");
     }
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, op->datatype);
-    emitter_stash_int_reg(e, find_register(REG_A, op->datatype->size));
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, op->datatype);
+    emit_binary_op(e, lhs, rhs, op->datatype);
     emit("%s%c %%%s, %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size), find_register(REG_A, op->datatype->size));
 }
 
@@ -387,11 +407,7 @@ static void emit_float_add_sub_mul_div(emitter_t* e, ast_node_t* op)
         default:
             errore(op->loc->row, op->loc->col, "operator %i does not exist or cannot be applied to a floating type", op->type);
     }
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, op->datatype);
-    emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), op->datatype->size);
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, op->datatype);
+    emit_binary_op(e, lhs, rhs, op->datatype);
     char* restored = emitter_restore_float_reg(e, op->datatype->size);
     emit("%ss%c %%%s, %%%s", operation, floatsize(op->datatype->size), restored, find_register(REG_FLOAT, 8));
     free(restored);
@@ -422,11 +438,7 @@ static void emit_int_mul_div(emitter_t* e, ast_node_t* op)
     }
     char* regA = find_register(REG_A, op->datatype->size);
     char* regD = find_register(REG_D, op->datatype->size);
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, op->datatype);
-    emitter_stash_int_reg(e, regA);
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, op->datatype);
+    emit_binary_op(e, lhs, rhs, op->datatype);
     emit("xor%c %%%s, %%%s", int_reg_size(op->datatype->size), regD, regD);
     emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), emitter_restore_int_reg(e, op->datatype->size));
     if (op->type == OP_MOD || op->type == OP_ASSIGN_MOD)
@@ -460,14 +472,7 @@ static void emit_conditional(emitter_t* e, ast_node_t* op)
     }
     char* regA = find_register(REG_A, agreed_type->size);
     char* regAb = find_register(REG_A, 1);
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, agreed_type);
-    if (!ftype)
-        emitter_stash_int_reg(e, regA); // rhs stashed
-    else
-        emitter_stash_float_reg(e, "xmm0", agreed_type->size);
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, agreed_type);
+    emit_binary_op(e, lhs, rhs, agreed_type);
     if (!ftype)
         emit("cmp%c %%%s, %%%s", int_reg_size(agreed_type->size), emitter_restore_int_reg(e, agreed_type->size), regA);
     else
@@ -480,11 +485,7 @@ static void emit_logical_and(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
     char* regA = find_register(REG_A, 1);
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, t_bool);
-    emitter_stash_int_reg(e, regA);
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, t_bool);
+    emit_binary_op(e, lhs, rhs, t_bool);
     char* fail = make_label(e->p, NULL);
     emit("cmpb $0, %%al");
     emit("je %s", fail);
@@ -502,11 +503,7 @@ static void emit_logical_or(emitter_t* e, ast_node_t* op)
 {
     ast_node_t* lhs = op->lhs, * rhs = op->rhs;
     char* regA = find_register(REG_A, 1);
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, t_bool);
-    emitter_stash_int_reg(e, regA);
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, t_bool);
+    emit_binary_op(e, lhs, rhs, t_bool);
     char* success = make_label(e->p, NULL);
     emit("cmpb $0, %%al");
     emit("jne %s", success);
@@ -530,18 +527,28 @@ static void emit_logical_not(emitter_t* e, ast_node_t* op)
     emit("sete %%al");
 }
 
-static void emit_single_unary(emitter_t* e, ast_node_t* op)
+static void emit_minus(emitter_t* e, ast_node_t* op)
+{
+    if (!isfloattype(op->operand->datatype->type))
+    {
+        emit_expr(e, op->operand);
+        emit("not%c %%%s", int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
+    }
+    else
+    {
+        if (!e->fp_negate_label) e->fp_negate_label = make_label(e->p, "-0.0");
+        emit("movsd %s(%%rip), %%xmm0", e->fp_negate_label);
+        emit_conv(e, t_f64, op->operand->datatype);
+        emit("movs%c %%xmm0, %%xmm1", floatsize(op->operand->datatype->size));
+        emit_expr(e, op->operand);
+        emit("xorp%c %%xmm1, %%xmm0", floatsize(op->operand->datatype->size));
+    }
+}
+
+static void emit_complement(emitter_t* e, ast_node_t* op)
 {
     emit_expr(e, op->operand);
-    char* operation = NULL;
-    switch (op->type)
-    {
-        case OP_COMPLEMENT: operation = "not"; break;
-        case OP_MINUS: operation = "neg"; break;
-        default:
-            errore(op->loc->row, op->loc->col, "unknown operation");
-    }
-    emit("%s%c %%%s", operation, int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
+    emit("not%c %%%s", int_reg_size(op->datatype->size), find_register(REG_A, op->datatype->size));
 }
 
 static void emit_shift(emitter_t* e, ast_node_t* op)
@@ -870,9 +877,13 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             break;
         }
         case OP_MINUS:
+        {
+            emit_minus(e, expr);
+            break;
+        }
         case OP_COMPLEMENT:
         {
-            emit_single_unary(e, expr);
+            emit_complement(e, expr);
             break;
         }
         case OP_ASM:

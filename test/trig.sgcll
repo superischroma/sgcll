@@ -1,0 +1,15 @@
+import "io";
+import "math";
+
+i32 main()
+{
+    io::println(math::sin(0.0));
+    io::println(math::sin(1.570796327));
+    io::println(math::sin(3.141592654));
+    io::println(math::cos(0.0));
+    io::println(math::cos(1.570796327));
+    io::println(math::cos(3.141592654));
+    io::println(math::tan(0.0));
+    io::println(math::tan(1.570796327));
+    io::println(math::tan(3.141592654));
+}

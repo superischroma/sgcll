@@ -38,11 +38,15 @@ int __builtin_i64_dec_itos(long long n, char* buffer, size_t radix)
 int __builtin_f64_dec_ftos(double d, char* buffer, int precision)
 {
     int ipart = (int) d;
+    double fpart = d - ipart;
     int i = __builtin_i64_dec_itos(ipart, buffer, 10);
-    buffer[i++] = '.';
-    double dec = (d - ipart) * 10.0f;
-    for (int j = 0; j < precision; i++, j++, dec = (dec * 10.0f) - ((int) dec) * 10)
-        buffer[i] = (int) dec + '0';
+    if (fpart != (int) fpart)
+        buffer[i++] = '.';
+    for (; fpart != (int) fpart && precision > 0; fpart -= (int) fpart, precision--)
+    {
+        fpart *= 10.0;
+        buffer[i++] = (int) fpart + '0';
+    }
     buffer[i] = '\0';
     return i;
 }
