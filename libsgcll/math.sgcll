@@ -1,24 +1,9 @@
-public f64 fmod(f64 x, f64 y)
+public operator(%) f64 fmod(f64 x, f64 y)
 {
     f64 n = (x / y) -> i64;
     return x - n * y;
 }
 
-public f64 sin(f64 x)
-{
-    f64 pi = 3.141592653;
-    x = fmod(x + pi, 2.0 * pi) - pi;
-    f64 xx = x * x;
-    f64 s = x + (x * xx) * (-0.16612511580269618 + xx * (0.0080394356072977748 + xx * -0.000149414020045938777495));
-    return s;
-}
-
-public f64 cos(f64 x)
-{
-    return sin(x + 1.5707963267948966192);
-}
-
-public f64 tan(f64 x)
-{
-    return sin(x) / cos(x);
-}
+public lowlvl f64 sin(f64 x);
+public lowlvl f64 cos(f64 x);
+public lowlvl f64 tan(f64 x);

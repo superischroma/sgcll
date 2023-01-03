@@ -305,6 +305,7 @@ parser_t* parser_init(lexer_t* lex)
     p->links = vector_init(5, 5);
     p->funcs = map_init(NULL, 50);
     p->entry = "main";
+    p->has_lowlvl = false;
     return p;
 }
 
@@ -1007,16 +1008,21 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         }
         parser_ensure_cextern(p, lowlvl_label, dt, func_node->params);
         func_node->lowlvl_label = lowlvl_label;
-        buffer_t* pathbuffer = buffer_init(50, 15);
-        int i = strlen(p->lex->path) - 1;
-        for (; i >= 0 && (p->lex->path)[i] != '/' && (p->lex->path)[i] != '\\'; i--);
-        if (i < 0)
-            errorp(func_name_token->loc->row, func_name_token->loc->col, "ya path is really messed up boy");
-        buffer_nstring(pathbuffer, p->lex->path, i + 1);
-        buffer_string(pathbuffer, p->lex->filename);
-        buffer_string(pathbuffer, "_lowlvl.o");
-        buffer_append(pathbuffer, '\0');
-        vector_push(p->links, buffer_export(pathbuffer));
+        if (!p->has_lowlvl)
+        {
+            buffer_t* pathbuffer = buffer_init(50, 15);
+            int i = strlen(p->lex->path) - 1;
+            for (; i >= 0 && (p->lex->path)[i] != '/' && (p->lex->path)[i] != '\\'; i--);
+            if (i < 0)
+                errorp(func_name_token->loc->row, func_name_token->loc->col, "ya path is really messed up boy");
+            buffer_nstring(pathbuffer, p->lex->path, i + 1);
+            buffer_string(pathbuffer, p->lex->filename);
+            buffer_string(pathbuffer, "_lowlvl.o");
+            buffer_append(pathbuffer, '\0');
+            vector_push(p->links, buffer_export(pathbuffer));
+            buffer_delete(pathbuffer);
+            p->has_lowlvl = true;
+        }
     }
     p->lenv = p->lenv->parent;
     if (p->lenv == p->genv)

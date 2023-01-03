@@ -383,6 +383,7 @@ typedef struct parser_t
     ast_node_t* current_blueprint;
     ast_node_t* current_block;
     char* entry;
+    bool has_lowlvl;
 } parser_t;
 
 typedef struct emitter_t
