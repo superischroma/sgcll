@@ -926,7 +926,7 @@ static ast_node_t* parser_read_func_definition(parser_t* p)
         func_node->func_type = 'c';
         func_node->func_name = p->current_blueprint->bp_name;
         func_node->datatype = p->current_blueprint->bp_datatype;
-        parser_ensure_cextern(p, "__builtin_alloc_bytes", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+        parser_ensure_cextern(p, "__libsgcllc_alloc_bytes", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
     }
     else if (!strcmp(func_name_token->content, "destructor"))
     {
@@ -1238,7 +1238,7 @@ static ast_node_t* parser_read_delete_statement(parser_t* p)
     token_t* del_keyword = parser_expect(p, KW_DELETE);
     ast_node_t* node = ast_get_by_token(p, parser_get(p));
     parser_expect(p, ';');
-    parser_ensure_cextern(p, "__builtin_delete_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+    parser_ensure_cextern(p, "__libsgcllc_delete_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
     return ast_delete_init(t_void, del_keyword->loc, node);
 }
 
@@ -1625,9 +1625,9 @@ next_token:
                     datatype_t* dt = operand->datatype;
                     if (token->id == OP_MAGNITUDE)
                     {
-                        parser_ensure_cextern(p, "__builtin_array_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
-                        parser_ensure_cextern(p, "__builtin_string_length", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
-                        parser_ensure_cextern(p, "__builtin_blueprint_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        parser_ensure_cextern(p, "__libsgcllc_array_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        parser_ensure_cextern(p, "__libsgcllc_string_length", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                        parser_ensure_cextern(p, "__libsgcllc_blueprint_size", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                         dt = t_i64;
                     }
                     else if (token->id == OP_NOT)
@@ -1669,7 +1669,7 @@ next_token:
                         dt = adt;
                     }
                     vector_push(stack, ast_make_init(dt, token->loc));
-                    parser_ensure_cextern(p, "__builtin_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+                    parser_ensure_cextern(p, "__libsgcllc_dynamic_ndim_array", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
                     break;
                 }
                 case OP_SCOPE:

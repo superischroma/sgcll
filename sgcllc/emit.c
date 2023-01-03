@@ -240,13 +240,13 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
     }
     if (!strcmp(func_definition->func_name, "main"))
     {
-        parser_ensure_cextern(e->p, "__builtin_init", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
-        emit("call __builtin_init");
+        parser_ensure_cextern(e->p, "__libsgcllc_init", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+        emit("call __libsgcllc_init");
     }
     if (func_definition->func_type == 'c')
     {
         emit("movl $%i, %%ecx", blueprint->bp_size);
-        emit("call __builtin_alloc_bytes");
+        emit("call __libsgcllc_alloc_bytes");
         emit("movq %%rax, -8(%%rbp)");
         emit_lvar_decl(e, vector_get(func_definition->local_variables, 0)); // move forward stackalloc
     }
@@ -256,8 +256,8 @@ static void emit_func_definition(emitter_t* e, ast_node_t* func_definition, ast_
         emit_noindent("%s:", func_definition->end_label);
     if (!strcmp(func_definition->func_name, "main"))
     {
-        parser_ensure_cextern(e->p, "__builtin_gc_finalize", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
-        emit("call __builtin_gc_finalize");
+        parser_ensure_cextern(e->p, "__libsgcllc_gc_finalize", t_void, vector_init(DEFAULT_CAPACITY, DEFAULT_ALLOC_DELTA));
+        emit("call __libsgcllc_gc_finalize");
     }
     emit("addq $%i, %%rsp", func_definition->unsafe < 0 ? stackalloc : func_definition->unsafe);
     e->stackoffset = 0;
@@ -368,7 +368,7 @@ static void emit_make(emitter_t* e, ast_node_t* make)
                 find_register(REG_A, current->length->datatype->type), find_register(x64cc[i + 2], current->length->datatype->type));
     }
     emit("movl $%i, %%ecx", current->size);
-    emit("call __builtin_dynamic_ndim_array");
+    emit("call __libsgcllc_dynamic_ndim_array");
 }
 
 static void emit_binary_op(emitter_t* e, ast_node_t* lhs, ast_node_t* rhs, datatype_t* agreed_type)
@@ -803,7 +803,7 @@ static void emit_delete_statement(emitter_t* e, ast_node_t* stmt)
                         emit("mov%c %%%s, %%%s", int_reg_size(current->length->datatype->size),
                             find_register(REG_A, current->length->datatype->type), find_register(x64cc[i + 2], current->length->datatype->type));
                 }
-                emit("call __builtin_delete_array");
+                emit("call __libsgcllc_delete_array");
             }
             else
                 errore(stmt->loc->row, stmt->loc->col, "delete operator cannot be applied here");
@@ -1029,13 +1029,13 @@ static void emit_expr(emitter_t* e, ast_node_t* expr)
             switch (expr->operand->datatype->type)
             {
                 case DTT_ARRAY:
-                    emit("call __builtin_array_size");
+                    emit("call __libsgcllc_array_size");
                     break;
                 case DTT_STRING:
-                    emit("call __builtin_string_length");
+                    emit("call __libsgcllc_string_length");
                     break;
                 case DTT_OBJECT:
-                    emit("call __builtin_blueprint_size");
+                    emit("call __libsgcllc_blueprint_size");
                     break;
                 default:
                     errore(expr->loc->row, expr->loc->col, "magnitude operator cannot be applied to this expression");
