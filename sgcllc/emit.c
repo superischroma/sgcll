@@ -112,12 +112,14 @@ emitter_t* emitter_init(parser_t* p, FILE* out, bool control)
     return e;
 }
 
-static void emitter_stash_int_reg(emitter_t* e, char* reg)
+static char* emitter_stash_int_reg(emitter_t* e, char* reg)
 {
     int size = deduce_register_size(reg);
     if (e->itmp >= TMPREG_COUNT)
         errore(0, 0, "tell dev to add stack pushing lol");
-    emit("mov%c %%%s, %%%s", int_reg_size(size), reg, find_register(tmpreg[e->itmp++], size));
+    char* stashreg;
+    emit("mov%c %%%s, %%%s", int_reg_size(size), reg, stashreg = find_register(tmpreg[e->itmp++], size));
+    return stashreg;
 }
 
 static char* emitter_restore_int_reg(emitter_t* e, int size)
@@ -125,11 +127,16 @@ static char* emitter_restore_int_reg(emitter_t* e, int size)
     return find_register(tmpreg[--e->itmp], size);
 }
 
-static void emitter_stash_float_reg(emitter_t* e, char* reg, int size)
+static char* emitter_stash_float_reg(emitter_t* e, char* reg, int size)
 {
     if (e->ftmp >= 16)
         errore(0, 0, "tell dev to add float stack pushing lol");
-    emit("movs%c %%%s, %%xmm%i", floatsize(size), reg, e->ftmp++);
+    char* name = malloc(6);
+    name[0] = 'x';
+    name[1] = name[2] = 'm';
+    itos(e->ftmp++, name + 3);
+    emit("movs%c %%%s, %%%s", floatsize(size), reg, name);
+    return name;
 }
 
 static char* emitter_restore_float_reg(emitter_t* e, int size)
@@ -366,14 +373,39 @@ static void emit_make(emitter_t* e, ast_node_t* make)
 
 static void emit_binary_op(emitter_t* e, ast_node_t* lhs, ast_node_t* rhs, datatype_t* agreed_type)
 {
-    emit_expr(e, rhs);
-    emit_conv(e, rhs->datatype, agreed_type);
-    if (isfloattype(agreed_type->type))
-        emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), agreed_type->size);
+    if (lhs->type == AST_FUNC_CALL) // bandaid patch
+    {
+        emit_expr(e, lhs);
+        emit_conv(e, lhs->datatype, agreed_type);
+        int offset = round_up(e->stackoffset + agreed_type->size, agreed_type->size);
+        if (isfloattype(agreed_type->type))
+            emit("movs%c %%xmm0, -%i(%%rbp)", floatsize(agreed_type->size), offset);
+        else
+            emit("mov%c %%%s, -%i(%%rbp)", int_reg_size(agreed_type->size), find_register(REG_A, agreed_type->size), offset);
+        emit_expr(e, rhs);
+        emit_conv(e, rhs->datatype, agreed_type);
+        if (isfloattype(agreed_type->type))
+        {
+            emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), agreed_type->size);
+            emit("movs%c -%i(%%rbp), %%xmm0", floatsize(agreed_type->size), offset);
+        }
+        else
+        {
+            emitter_stash_int_reg(e, find_register(REG_A, agreed_type->size));
+            emit("mov%c -%i(%%rbp), %%%s", int_reg_size(agreed_type->size), offset, find_register(REG_A, agreed_type->size));
+        }
+    }
     else
-        emitter_stash_int_reg(e, find_register(REG_A, agreed_type->size));
-    emit_expr(e, lhs);
-    emit_conv(e, lhs->datatype, agreed_type);
+    {
+        emit_expr(e, rhs);
+        emit_conv(e, rhs->datatype, agreed_type);
+        if (isfloattype(agreed_type->type))
+            emitter_stash_float_reg(e, find_register(REG_FLOAT, 8), agreed_type->size);
+        else
+            emitter_stash_int_reg(e, find_register(REG_A, agreed_type->size));
+        emit_expr(e, lhs);
+        emit_conv(e, lhs->datatype, agreed_type);
+    }
 }
 
 static void emit_int_add_sub(emitter_t* e, ast_node_t* op)

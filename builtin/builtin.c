@@ -45,7 +45,7 @@ int __builtin_f64_dec_ftos(double d, char* buffer, int precision)
     for (; fpart != (int) fpart && precision > 0; fpart -= (int) fpart, precision--)
     {
         fpart *= 10.0;
-        buffer[i++] = (int) fpart + '0';
+        buffer[i++] = __builtin_abs((int) fpart) + '0';
     }
     buffer[i] = '\0';
     return i;

@@ -7,7 +7,7 @@ public f64 fmod(f64 x, f64 y)
 public f64 sin(f64 x)
 {
     f64 pi = 3.141592653;
-    x = -pi + fmod(x + pi, 2.0 * pi);
+    x = fmod(x + pi, 2.0 * pi) - pi;
     f64 xx = x * x;
     f64 s = x + (x * xx) * (-0.16612511580269618 + xx * (0.0080394356072977748 + xx * -0.000149414020045938777495));
     return s;
