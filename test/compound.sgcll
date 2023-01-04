@@ -1,6 +1,8 @@
+import "io";
+
 i32 main()
 {
     i32 i = 12;
     i /= 4;
-    println(i -> i64);
+    io::println(i -> i64);
 }

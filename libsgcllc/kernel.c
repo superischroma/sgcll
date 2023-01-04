@@ -19,10 +19,10 @@ void __libsgcllc_gc_finalize()
         __libsgcllc_delete_bytes_no_gc(node);
         #ifdef __libsgcllc_DEBUG
         if (result)
-            __libsgcllc_string_print("[builtin debug] deallocated memory at 0x");
+            __libsgcllc_fprintf(__libsgcllc_stdstream(stdout), "[builtin debug] deallocated memory at 0x");
         else
-            __libsgcllc_string_print("[builtin debug] failed to deallocate memory at 0x");
-        __libsgcllc_i64_println((UINT_PTR) mem, 16);
+            __libsgcllc_fprintf(__libsgcllc_stdstream(stdout), "[builtin debug] failed to deallocate memory at 0x");
+        __libsgcllc_fprintf(__libsgcllc_stdstream(stdout), "%p\n", mem);
         #endif
         node = next;
     }

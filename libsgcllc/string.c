@@ -2,7 +2,7 @@
 
 #include "libsgcllc.h"
 
-int __libsgcllc_itos(long long n, char* buffer, size_t radix)
+int __libsgcllc_itos(long long n, char* buffer, sz_t radix)
 {
     int i, sign;
 
