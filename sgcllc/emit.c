@@ -156,20 +156,6 @@ static void emit_blueprint(emitter_t* e, ast_node_t* blueprint)
 
 static void emit_file(emitter_t* e, ast_node_t* file)
 {
-    for (int i = 0; i < e->p->userexterns->size; i++)
-    {
-        ast_node_t* userextern = vector_get(e->p->userexterns, i);
-        if (userextern->lowlvl_label)
-            continue;
-        emit(".extern %s", userextern->func_label);
-    }
-    for (int i = 0; i < e->p->cexterns->size; i++)
-    {
-        ast_node_t* cextern = vector_get(e->p->cexterns, i);
-        if (cextern->lowlvl_label)
-            continue;
-        emit(".extern %s", cextern->func_label);
-    }
     ast_node_t* defaul_main = ast_func_definition_init(t_i32, NULL, 'g', e->p->entry, e->p->lex->filename);
     char* defaul_label = make_func_label(e->p->lex->filename, defaul_main, NULL);
     debugf("entry label: %s\n", defaul_label);
