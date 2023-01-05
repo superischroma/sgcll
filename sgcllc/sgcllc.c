@@ -96,15 +96,7 @@ int main(int argc, char** argv)
     assembly[pathl - 4] = '\0';
     vector_t* links = build(path);
     char link[1024];
-    sprintf(link, "gcc -o a.exe %s", assembly);
-    char extralink[256];
-    for (int i = 0; i < links->size; i++)
-    {
-        sprintf(extralink, " %s", vector_get(links, i));
-        strcat(link, extralink);
-    }
-    sprintf(extralink, " libsgcllc/libsgcllc.a");
-    strcat(link, extralink);
+    sprintf(link, "gcc -o a.exe %s libsgcllc/libsgcllc.a libsgcll/libsgcll.a", assembly);
     debugf("linker command: %s\n", link);
     system(link);
     free(assembly);

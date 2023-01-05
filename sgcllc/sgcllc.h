@@ -401,6 +401,7 @@ typedef struct emitter_t
 typedef struct options_t
 {
     vector_t* import_search_paths;
+    char* fdlibm_path;
 } options_t;
 
 /* sgcllc.c */

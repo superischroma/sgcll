@@ -1,4 +1,4 @@
-#include "fdlibm/fdlibm.h"
+#include "../fdlibm/fdlibm.h"
 
 double math_g_sin_f64(double x)
 {
