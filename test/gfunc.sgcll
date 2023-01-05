@@ -1,0 +1,12 @@
+import "io";
+
+generic(T) T add(T x, T y)
+{
+    return x + y;
+}
+
+i32 main()
+{
+    io::println(i32 <> add(5, 3)); // explicit generic type: i32
+    io::println(add(5.6, 7.8)); // inferred from arguments: f64
+}
