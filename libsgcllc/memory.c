@@ -73,7 +73,8 @@ sz_t __libsgcllc_blueprint_size(void* obj)
     return HeapSize(GetProcessHeap(), 0, obj);
 }
 
-void __libsgcllc_copy_memory(void* dest, const void* src, int length)
+void __libsgcllc_copy_memory(void* dest, const void* src, sz_t count)
 {
-    CopyMemory(dest, src, length);
+    for (char* dst8 = (char*) dest - 1, * src8 = (char*) src - 1; count--;)
+        *++dst8 = *++src8;
 }

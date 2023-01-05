@@ -50,7 +50,7 @@ void* __libsgcllc_dynamic_ndim_array(sz_t element_width, sz_t dc, ...);
 static void __libsgcllc_delete_array_recur(void* array, sz_t dc, unsigned long long* dimensions);
 void __libsgcllc_delete_array(void* array, sz_t dc, ...);
 sz_t __libsgcllc_array_size(void* array);
-void __libsgcllc_copy_memory(void* dest, const void* src, int length);
+void __libsgcllc_copy_memory(void* dest, const void* src, sz_t count);
 sz_t __libsgcllc_blueprint_size(void* obj);
 
 #endif
